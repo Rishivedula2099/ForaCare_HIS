@@ -1,15 +1,25 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
+import { Breadcrumbs } from "./breadcrumbs";
+import { GlobalSearch } from "./global-search";
 
 interface AppShellProps {
   children: React.ReactNode;
   activePatientBanner?: React.ReactNode;
+  /** Hide the auto breadcrumb bar for pages that render their own via PageHeader. */
+  hideBreadcrumbBar?: boolean;
 }
 
-export function AppShell({ children, activePatientBanner }: AppShellProps) {
+export function AppShell({
+  children,
+  activePatientBanner,
+  hideBreadcrumbBar,
+}: AppShellProps) {
+  const [searchOpen, setSearchOpen] = useState(false);
+
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900">
       {/* Permanent Desktop Navigation Sidebar */}
@@ -17,7 +27,14 @@ export function AppShell({ children, activePatientBanner }: AppShellProps) {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <Header />
+        <Header onSearchClick={() => setSearchOpen(true)} />
+
+        {/* Breadcrumb Trail */}
+        {!hideBreadcrumbBar && (
+          <div className="border-b border-slate-200 bg-white px-6 py-2">
+            <Breadcrumbs />
+          </div>
+        )}
 
         {/* Persistent Patient Context Banner (When operating in patient scope) */}
         {activePatientBanner && (
@@ -29,6 +46,9 @@ export function AppShell({ children, activePatientBanner }: AppShellProps) {
         {/* Viewport Content */}
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
+
+      {/* Global Search Command Palette (Ctrl+K / Cmd+K) */}
+      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }
