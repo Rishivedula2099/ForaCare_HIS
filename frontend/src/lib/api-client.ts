@@ -7,7 +7,7 @@ import axios, {
 } from "axios";
 import { API_BASE_URL } from "@/lib/constants";
 import { generateCorrelationId } from "@/lib/utils";
-import { ApiError, ApiResponse } from "@/types/api";
+import { ApiError, ApiErrorDetail, ApiResponse } from "@/types/api";
 
 class ApiClient {
   private instance: AxiosInstance;
@@ -61,41 +61,46 @@ class ApiClient {
     this.instance.interceptors.response.use(
       (response: AxiosResponse) => response,
       (error: AxiosError) => {
-        const correlationId =
+        const requestId =
           (error.config?.headers?.["X-Request-Id"] as string) ||
           generateCorrelationId();
 
         const normalizedError: ApiError = {
           success: false,
-          detail: "An unexpected error occurred. Please try again.",
+          code: "UNKNOWN_ERROR",
+          message: "An unexpected error occurred. Please try again.",
+          details: [],
           status_code: error.response?.status || 500,
-          correlation_id: correlationId,
-          timestamp: new Date().toISOString(),
+          request_id: requestId,
         };
 
-        if (error.response?.data) {
-          const data = error.response.data as Record<string, unknown>;
+        const body = error.response?.data as
+          | {
+              error?: { code?: string; message?: string; details?: ApiErrorDetail[] };
+              meta?: { request_id?: string | null };
+            }
+          | undefined;
 
-          if (typeof data.detail === "string") {
-            normalizedError.detail = data.detail;
-          } else if (Array.isArray(data.detail)) {
-            // Pydantic validation errors array
-            normalizedError.detail = "Validation failed on request inputs.";
-            normalizedError.errors = data.detail;
-          }
-
-          if (typeof data.error_code === "string") {
-            normalizedError.error_code = data.error_code;
-          }
+        if (body?.error) {
+          normalizedError.code = body.error.code || normalizedError.code;
+          normalizedError.message = body.error.message || normalizedError.message;
+          normalizedError.details = body.error.details || [];
         } else if (error.code === "ECONNABORTED") {
-          normalizedError.detail = "Request timed out. Please verify connectivity.";
+          normalizedError.code = "TIMEOUT";
+          normalizedError.message = "Request timed out. Please verify connectivity.";
         } else if (!error.response) {
-          normalizedError.detail = "Network error: unable to reach the HIS API server.";
+          normalizedError.code = "NETWORK_ERROR";
+          normalizedError.message = "Network error: unable to reach the HIS API server.";
+        }
+
+        if (body?.meta?.request_id) {
+          normalizedError.request_id = body.meta.request_id;
         }
 
         // Auto logout on 401 Unauthorized
         if (error.response?.status === 401 && typeof window !== "undefined") {
           localStorage.removeItem("foracare_access_token");
+          localStorage.removeItem("foracare_refresh_token");
           if (!window.location.pathname.startsWith("/login")) {
             // Avoid infinite redirect loop if already on login page
             window.location.href = `/login?redirect=${encodeURIComponent(

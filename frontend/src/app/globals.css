@@ -10,32 +10,40 @@
   --popover: #ffffff;
   --popover-foreground: #0f172a;
   
-  --primary: #0f766e;
+  /* Brand Palette from ForaCare HIS Identity */
+  --primary: #0a858f;
+  --primary-hover: #086e77;
   --primary-foreground: #ffffff;
   
+  --brand-navy: #004565;
+  --brand-navy-foreground: #ffffff;
+  
+  --brand-orange: #e86328;
+  --brand-orange-foreground: #ffffff;
+  
   --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
+  --secondary-foreground: #004565;
   
   --muted: #f1f5f9;
   --muted-foreground: #64748b;
   
   --accent: #f0fdfa;
-  --accent-foreground: #0f766e;
+  --accent-foreground: #0a858f;
   
   --destructive: #e11d48;
   --destructive-foreground: #ffffff;
   
   --border: #e2e8f0;
   --input: #e2e8f0;
-  --ring: #0f766e;
+  --ring: #0a858f;
   
   --radius: 0.5rem;
 
   /* Clinical Status Tokens */
   --status-waiting: #d97706;
   --status-waiting-bg: #fffbeb;
-  --status-active: #2563eb;
-  --status-active-bg: #eff6ff;
+  --status-active: #0284c7;
+  --status-active-bg: #f0f9ff;
   --status-done: #059669;
   --status-done-bg: #ecfdf5;
   --status-alert: #e11d48;
@@ -50,7 +58,12 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-navy-foreground: var(--brand-navy-foreground);
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-foreground: var(--brand-orange-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
