@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
 
+    jwt_secret_key: str = "local-dev-only-insecure-secret-change-me"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

@@ -11,7 +11,9 @@ from app.core.database import Base
 
 # Import every module package's `models` module here so its tables are
 # registered on `Base.metadata` before autogenerate compares against it.
-# Example once Phase 2 lands: `from app.modules.patients import models  # noqa: F401`
+from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.facilities import models as facilities_models  # noqa: F401
+from app.modules.tenants import models as tenants_models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
