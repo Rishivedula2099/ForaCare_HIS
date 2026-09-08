@@ -12,6 +12,7 @@ export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
   HOSPITAL_ADMIN: "HOSPITAL_ADMIN",
   RECEPTIONIST: "RECEPTIONIST",
+  BILLING_CASHIER: "BILLING_CASHIER",
   DOCTOR: "DOCTOR",
   NURSE: "NURSE",
   LAB_TECH: "LAB_TECH",
@@ -107,6 +108,12 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
     title: "Settings",
     href: "/settings",
     iconName: "SlidersHorizontal",
+    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN],
+  },
+  {
+    title: "Roles & Permissions",
+    href: "/roles",
+    iconName: "KeyRound",
     roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN],
   },
 ];

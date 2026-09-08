@@ -25,9 +25,37 @@ export interface AuthUser {
   email: string;
   full_name: string;
   role: UserRole;
+  permissions: string[];
   tenant_id: string;
   facility_id: string;
   is_active: boolean;
+}
+
+/** Raw `/auth/login` and `/auth/me` user shape - `role` is nested, not flattened. */
+export interface BackendUserPayload {
+  id: string;
+  username: string;
+  email: string;
+  full_name: string;
+  role: { id: string; code: UserRole; name: string; description?: string };
+  permissions: string[];
+  tenant_id: string;
+  facility_id: string;
+  is_active: boolean;
+}
+
+export function adaptBackendUser(raw: BackendUserPayload): AuthUser {
+  return {
+    id: raw.id,
+    username: raw.username,
+    email: raw.email,
+    full_name: raw.full_name,
+    role: raw.role.code,
+    permissions: raw.permissions,
+    tenant_id: raw.tenant_id,
+    facility_id: raw.facility_id,
+    is_active: raw.is_active,
+  };
 }
 
 export interface AuthTokens {
@@ -89,10 +117,16 @@ export const ROLE_METADATA_MAP: Record<UserRole, RoleMetadata> = {
     keyPermissions: ["Manage users", "Configure departments", "Configure tariffs"],
   },
   [ROLES.RECEPTIONIST]: {
-    label: "Receptionist / Cashier",
-    description: "Patient registration, OPD booking, billing, and collections.",
+    label: "Receptionist / Front Desk",
+    description: "Patient registration, OPD booking, and queue management.",
     badgeClassName: "bg-amber-100 text-amber-700 border-amber-200",
-    keyPermissions: ["Register patients", "Issue tokens", "Collect payments"],
+    keyPermissions: ["Register patients", "Issue tokens", "Manage OPD queue"],
+  },
+  [ROLES.BILLING_CASHIER]: {
+    label: "Billing / Cashier",
+    description: "Invoicing, payment collection, and billing reconciliation.",
+    badgeClassName: "bg-orange-100 text-orange-700 border-orange-200",
+    keyPermissions: ["Create invoices", "Collect payments", "Print receipts"],
   },
   [ROLES.DOCTOR]: {
     label: "Doctor",

@@ -8,6 +8,28 @@
 import { ROLES, UserRole } from "@/lib/constants";
 import { AuthSession, AuthUser, Facility, Tenant } from "@/types/auth";
 
+/** Mirrors the backend's ROLE_PERMISSION_SEED (app/modules/rbac/constants.py). */
+const MOCK_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
+  [ROLES.SUPER_ADMIN]: [
+    "patients.view", "patients.manage", "opd.manage_queue", "ipd.manage_beds",
+    "billing.create_invoice", "billing.collect_payment", "lab.accession_sample",
+    "lab.enter_results", "lab.verify_results", "lab.approve_reports", "documents.print",
+    "audit.view_logs", "users.manage", "roles.view", "roles.manage", "facilities.manage",
+    "tenants.manage", "system.diagnostics",
+  ],
+  [ROLES.HOSPITAL_ADMIN]: [
+    "users.manage", "roles.view", "roles.manage", "facilities.manage", "patients.view",
+    "audit.view_logs",
+  ],
+  [ROLES.DOCTOR]: ["patients.view", "patients.manage", "opd.manage_queue", "ipd.manage_beds", "documents.print"],
+  [ROLES.NURSE]: ["patients.view", "ipd.manage_beds", "documents.print"],
+  [ROLES.RECEPTIONIST]: ["patients.view", "patients.manage", "opd.manage_queue", "documents.print"],
+  [ROLES.BILLING_CASHIER]: ["billing.create_invoice", "billing.collect_payment", "documents.print"],
+  [ROLES.LAB_TECH]: ["lab.accession_sample", "lab.enter_results", "documents.print"],
+  [ROLES.LAB_APPROVER]: ["lab.verify_results", "lab.approve_reports", "documents.print"],
+  [ROLES.AUDITOR]: ["audit.view_logs"],
+};
+
 export const MOCK_TENANT: Tenant = {
   id: "11111111-1111-1111-1111-111111111111",
   name: "ForaCare Health Network",
@@ -63,6 +85,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       email: "super.admin@foracare-his.com",
       full_name: "Ananya Kapoor",
       role: ROLES.SUPER_ADMIN,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.SUPER_ADMIN],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
@@ -76,6 +99,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       email: "hospital.admin@foracare-his.com",
       full_name: "Vikram Seth",
       role: ROLES.HOSPITAL_ADMIN,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.HOSPITAL_ADMIN],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
@@ -89,6 +113,21 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       email: "rahul.deshmukh@foracare-his.com",
       full_name: "Rahul Deshmukh",
       role: ROLES.RECEPTIONIST,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.RECEPTIONIST],
+      tenant_id: MOCK_TENANT.id,
+      facility_id: MAIN_FACILITY_ID,
+      is_active: true,
+    },
+  },
+  {
+    password: "Demo@123",
+    user: {
+      id: "33333333-3333-3333-3333-333333333309",
+      username: "billing.cashier",
+      email: "billing.cashier@foracare-his.com",
+      full_name: "Kavita Menon",
+      role: ROLES.BILLING_CASHIER,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.BILLING_CASHIER],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
@@ -102,6 +141,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       email: "priya.raman@foracare-his.com",
       full_name: "Dr. Priya Raman",
       role: ROLES.DOCTOR,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.DOCTOR],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
@@ -115,6 +155,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       email: "mary.joseph@foracare-his.com",
       full_name: "Sister Mary Joseph",
       role: ROLES.NURSE,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.NURSE],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
@@ -128,6 +169,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       email: "lab.tech@foracare-his.com",
       full_name: "Sanjay Iyer",
       role: ROLES.LAB_TECH,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.LAB_TECH],
       tenant_id: MOCK_TENANT.id,
       facility_id: METRO_FACILITY_ID,
       is_active: true,
@@ -141,6 +183,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       email: "anirudh.sen@foracare-his.com",
       full_name: "Dr. Anirudh Sen",
       role: ROLES.LAB_APPROVER,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.LAB_APPROVER],
       tenant_id: MOCK_TENANT.id,
       facility_id: METRO_FACILITY_ID,
       is_active: true,
@@ -154,6 +197,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       email: "auditor@foracare-his.com",
       full_name: "Meera Nair",
       role: ROLES.AUDITOR,
+      permissions: MOCK_ROLE_PERMISSIONS[ROLES.AUDITOR],
       tenant_id: MOCK_TENANT.id,
       facility_id: SOUTH_FACILITY_ID,
       is_active: true,

@@ -2,7 +2,9 @@ import uuid
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.modules.auth.models import UserRole
+from app.modules.auth.models import User
+from app.modules.facilities.schemas import FacilityOut
+from app.modules.tenants.schemas import TenantOut
 
 
 class LoginRequest(BaseModel):
@@ -31,26 +33,10 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
-class TenantOut(BaseModel):
+class RoleOut(BaseModel):
     id: uuid.UUID
-    name: str
-    slug: str
     code: str
-    is_active: bool
-
-    model_config = {"from_attributes": True}
-
-
-class FacilityOut(BaseModel):
-    id: uuid.UUID
-    tenant_id: uuid.UUID
     name: str
-    facility_code: str
-    address: str | None = None
-    phone: str | None = None
-    timezone: str
-    currency: str
-    is_active: bool
 
     model_config = {"from_attributes": True}
 
@@ -60,12 +46,27 @@ class UserOut(BaseModel):
     username: str
     email: EmailStr
     full_name: str
-    role: UserRole
+    role: RoleOut
+    permissions: list[str]
     tenant_id: uuid.UUID
     facility_id: uuid.UUID
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_user(cls, user: User) -> "UserOut":
+        return cls(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            full_name=user.full_name,
+            role=RoleOut.model_validate(user.role),
+            permissions=sorted({permission.code for permission in user.role.permissions}),
+            tenant_id=user.tenant_id,
+            facility_id=user.facility_id,
+            is_active=user.is_active,
+        )
 
 
 class LoginResponse(BaseModel):

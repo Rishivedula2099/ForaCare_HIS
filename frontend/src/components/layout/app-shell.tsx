@@ -6,23 +6,27 @@ import { Header } from "./header";
 import { Breadcrumbs } from "./breadcrumbs";
 import { GlobalSearch } from "./global-search";
 import { AuthGuard } from "@/components/auth/auth-guard";
+import { UserRole } from "@/lib/constants";
 
 interface AppShellProps {
   children: React.ReactNode;
   activePatientBanner?: React.ReactNode;
   /** Hide the auto breadcrumb bar for pages that render their own via PageHeader. */
   hideBreadcrumbBar?: boolean;
+  /** Restrict this page to the given roles; redirects to /forbidden otherwise. */
+  allowedRoles?: UserRole[];
 }
 
 export function AppShell({
   children,
   activePatientBanner,
   hideBreadcrumbBar,
+  allowedRoles,
 }: AppShellProps) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
-    <AuthGuard>
+    <AuthGuard allowedRoles={allowedRoles}>
       <div className="flex min-h-screen bg-slate-50 text-slate-900">
         {/* Permanent Desktop Navigation Sidebar */}
         <Sidebar />

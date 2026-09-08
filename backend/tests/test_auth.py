@@ -16,7 +16,8 @@ def test_login_returns_tokens_and_context_in_standard_envelope(client):
 
     data = body["data"]
     assert data["user"]["username"] == VALID_USERNAME
-    assert data["user"]["role"] == "DOCTOR"
+    assert data["user"]["role"]["code"] == "DOCTOR"
+    assert "patients.view" in data["user"]["permissions"]
     assert data["tenant"]["code"] == "FORACARE"
     assert data["facility"]["facility_code"]
     assert data["tokens"]["access_token"]
@@ -122,12 +123,12 @@ def test_role_gated_dependency_blocks_wrong_role(client):
 
     from app.core.permissions import require_roles
     from app.main import app
-    from app.modules.auth.models import UserRole
+    from app.modules.rbac.constants import SystemRole
 
     probe_router = APIRouter()
 
     @probe_router.get("/test-only/super-admin-probe")
-    async def _probe(_user=Depends(require_roles(UserRole.SUPER_ADMIN))):
+    async def _probe(_user=Depends(require_roles(SystemRole.SUPER_ADMIN))):
         return {"ok": True}
 
     app.include_router(probe_router)
