@@ -109,7 +109,7 @@ async def rotate_refresh_token(db: AsyncSession, raw_refresh_token: str) -> Toke
     return await issue_tokens(db, user)
 
 
-async def revoke_refresh_token(db: AsyncSession, raw_refresh_token: str) -> None:
+async def revoke_refresh_token(db: AsyncSession, raw_refresh_token: str) -> RefreshToken | None:
     token_hash = hash_refresh_token(raw_refresh_token)
     result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
     token = result.scalar_one_or_none()
@@ -117,6 +117,8 @@ async def revoke_refresh_token(db: AsyncSession, raw_refresh_token: str) -> None
     if token is not None and token.revoked_at is None:
         token.revoked_at = datetime.now(timezone.utc)
         await db.commit()
+
+    return token
 
 
 async def change_password(db: AsyncSession, user: User, current_password: str, new_password: str) -> None:

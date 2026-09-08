@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.exceptions import NotFoundError
 from app.core.permissions import get_current_user
 from app.core.responses import ApiResponse, success_response
+from app.modules.audit import service as audit_service
 from app.modules.auth import service
 from app.modules.auth.models import User
 from app.modules.auth.schemas import (
@@ -42,6 +43,17 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
     tenant, facility = await _load_context(db, user)
     tokens = await service.issue_tokens(db, user)
 
+    await audit_service.record_event(
+        db,
+        action="auth.login.succeeded",
+        resource_type="user",
+        resource_id=user.id,
+        actor_user_id=user.id,
+        actor_username=user.username,
+        tenant_id=user.tenant_id,
+        facility_id=user.facility_id,
+    )
+
     response = LoginResponse(
         user=UserOut.from_user(user), tenant=tenant, facility=facility, tokens=tokens
     )
@@ -62,7 +74,15 @@ async def refresh(payload: RefreshRequest, request: Request, db: AsyncSession = 
 
 @router.post("/logout", response_model=ApiResponse, summary="Invalidate the given refresh token")
 async def logout(payload: LogoutRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    await service.revoke_refresh_token(db, payload.refresh_token)
+    token = await service.revoke_refresh_token(db, payload.refresh_token)
+    if token is not None:
+        await audit_service.record_event(
+            db,
+            action="auth.logout",
+            resource_type="user",
+            resource_id=token.user_id,
+            actor_user_id=token.user_id,
+        )
     return success_response(
         {"logged_out": True},
         request_id=getattr(request.state, "request_id", None),
@@ -91,6 +111,12 @@ async def change_password(
     current_user: User = Depends(get_current_user),
 ):
     await service.change_password(db, current_user, payload.current_password, payload.new_password)
+    await audit_service.record_event(
+        db,
+        action="auth.password_changed",
+        resource_type="user",
+        resource_id=current_user.id,
+    )
     return success_response(
         {"changed": True},
         request_id=getattr(request.state, "request_id", None),

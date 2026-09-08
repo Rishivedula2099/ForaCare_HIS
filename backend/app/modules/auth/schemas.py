@@ -3,6 +3,8 @@ import uuid
 from pydantic import BaseModel, EmailStr, Field
 
 from app.modules.auth.models import User
+from app.modules.facilities.schemas import FacilityOut
+from app.modules.tenants.schemas import TenantOut
 
 
 class LoginRequest(BaseModel):
@@ -29,30 +31,6 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
-
-
-class TenantOut(BaseModel):
-    id: uuid.UUID
-    name: str
-    slug: str
-    code: str
-    is_active: bool
-
-    model_config = {"from_attributes": True}
-
-
-class FacilityOut(BaseModel):
-    id: uuid.UUID
-    tenant_id: uuid.UUID
-    name: str
-    facility_code: str
-    address: str | None = None
-    phone: str | None = None
-    timezone: str
-    currency: str
-    is_active: bool
-
-    model_config = {"from_attributes": True}
 
 
 class RoleOut(BaseModel):

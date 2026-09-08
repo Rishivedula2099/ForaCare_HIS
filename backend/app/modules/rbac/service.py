@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
+from app.modules.audit import service as audit_service
 from app.modules.rbac.models import Permission, Role
 from app.modules.rbac.schemas import PermissionOut, RoleDetailOut, RoleSummaryOut
 
@@ -53,6 +54,7 @@ async def set_role_permissions(
     db: AsyncSession, role_id: uuid.UUID, permission_ids: list[uuid.UUID]
 ) -> RoleDetailOut:
     role = await _get_role_or_404(db, role_id)
+    before_codes = sorted(permission.code for permission in role.permissions)
 
     result = await db.execute(select(Permission).where(Permission.id.in_(permission_ids)))
     permissions = result.scalars().all()
@@ -60,6 +62,18 @@ async def set_role_permissions(
         raise NotFoundError("One or more permission ids were not found.")
 
     role.permissions = permissions
+    await db.flush()
+
+    after_codes = sorted(permission.code for permission in role.permissions)
+    await audit_service.record_event(
+        db,
+        action="rbac.role.permissions_updated",
+        resource_type="role",
+        resource_id=role.id,
+        before={"permission_codes": before_codes},
+        after={"permission_codes": after_codes},
+        commit=False,
+    )
     await db.commit()
     await db.refresh(role)
 
