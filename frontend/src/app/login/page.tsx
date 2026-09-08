@@ -69,7 +69,7 @@ function LoginForm() {
     <div className="flex min-h-screen w-full bg-slate-50">
       {/* Left brand showcase */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-[#04222b] text-white p-12 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] bg-size-[24px_24px]" />
         <div className="relative z-10">
           <Logo variant="icon" size="lg" className="mb-10" />
           <h1 className="text-3xl font-bold tracking-tight leading-tight max-w-md">
