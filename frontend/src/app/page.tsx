@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -117,10 +118,12 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" className="gap-1.5 shadow-xs">
-              <UserPlus className="w-3.5 h-3.5" />
-              Register Patient
-            </Button>
+            <Link href="/patients/new">
+              <Button size="sm" className="gap-1.5 shadow-xs bg-primary text-white hover:bg-primary/90">
+                <UserPlus className="w-3.5 h-3.5" />
+                Register Patient
+              </Button>
+            </Link>
             <Button variant="outline" size="sm" className="gap-1.5 bg-white">
               <Ticket className="w-3.5 h-3.5 text-primary" />
               New OPD Token
