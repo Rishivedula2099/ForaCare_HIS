@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
 import { KeyRound, LogOut, Settings, ShieldCheck, UserCircle } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -12,9 +13,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
+import { RoleBadge } from "@/components/common/role-badge";
 import { useAuth } from "@/hooks/use-auth";
+import { ROLES } from "@/lib/constants";
 import { ROLE_METADATA_MAP } from "@/types/auth";
-import { cn } from "@/lib/utils";
 
 function getInitials(name: string): string {
   return name
@@ -26,12 +28,14 @@ function getInitials(name: string): string {
 }
 
 export function UserMenu() {
-  const { user, logout } = useAuth();
+  const { user, hasRole, logout } = useAuth();
+  const router = useRouter();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = React.useState(false);
 
   if (!user) return null;
 
   const roleMeta = ROLE_METADATA_MAP[user.role];
+  const canManageRoles = hasRole([ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN]);
 
   return (
     <>
@@ -55,14 +59,7 @@ export function UserMenu() {
         <DropdownMenuContent align="end" className="w-60">
           <DropdownMenuLabel className="normal-case tracking-normal text-xs font-semibold text-slate-700">
             {user.email}
-            <span
-              className={cn(
-                "block w-fit mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border",
-                roleMeta.badgeClassName
-              )}
-            >
-              {roleMeta.label}
-            </span>
+            <RoleBadge role={user.role} className="mt-1" />
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem>
@@ -77,10 +74,12 @@ export function UserMenu() {
             <Settings className="w-4 h-4 text-slate-500" />
             Preferences
           </DropdownMenuItem>
-          <DropdownMenuItem>
-            <ShieldCheck className="w-4 h-4 text-slate-500" />
-            Roles & Permissions
-          </DropdownMenuItem>
+          {canManageRoles && (
+            <DropdownMenuItem onClick={() => router.push("/roles")}>
+              <ShieldCheck className="w-4 h-4 text-slate-500" />
+              Roles & Permissions
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => logout()}

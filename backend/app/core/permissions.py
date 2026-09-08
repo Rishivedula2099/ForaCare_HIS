@@ -4,11 +4,13 @@ import jwt
 from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_access_token
-from app.modules.auth.models import User, UserRole
+from app.modules.auth.models import User
+from app.modules.rbac.models import Role
 
 
 def _extract_bearer_token(request: Request) -> str:
@@ -33,7 +35,11 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     except (KeyError, ValueError) as exc:
         raise UnauthorizedError("Invalid access token.") from exc
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.role).selectinload(Role.permissions))
+        .where(User.id == user_id)
+    )
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active:
@@ -42,9 +48,19 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     return user
 
 
-def require_roles(*roles: UserRole):
+def require_roles(*role_codes: str):
     async def _dependency(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in roles:
+        if current_user.role.code not in role_codes:
+            raise ForbiddenError("You do not have permission to perform this action.")
+        return current_user
+
+    return _dependency
+
+
+def require_permissions(*permission_codes: str):
+    async def _dependency(current_user: User = Depends(get_current_user)) -> User:
+        user_permission_codes = {permission.code for permission in current_user.role.permissions}
+        if not set(permission_codes).issubset(user_permission_codes):
             raise ForbiddenError("You do not have permission to perform this action.")
         return current_user
 

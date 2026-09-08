@@ -16,6 +16,7 @@ from app.modules.auth.schemas import (
     MeResponse,
     RefreshRequest,
     TokenResponse,
+    UserOut,
 )
 from app.modules.facilities.models import Facility
 from app.modules.tenants.models import Tenant
@@ -41,7 +42,9 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
     tenant, facility = await _load_context(db, user)
     tokens = await service.issue_tokens(db, user)
 
-    response = LoginResponse(user=user, tenant=tenant, facility=facility, tokens=tokens)
+    response = LoginResponse(
+        user=UserOut.from_user(user), tenant=tenant, facility=facility, tokens=tokens
+    )
     return success_response(
         response.model_dump(mode="json"),
         request_id=getattr(request.state, "request_id", None),
@@ -73,7 +76,7 @@ async def me(
     current_user: User = Depends(get_current_user),
 ):
     tenant, facility = await _load_context(db, current_user)
-    response = MeResponse(user=current_user, tenant=tenant, facility=facility)
+    response = MeResponse(user=UserOut.from_user(current_user), tenant=tenant, facility=facility)
     return success_response(
         response.model_dump(mode="json"),
         request_id=getattr(request.state, "request_id", None),

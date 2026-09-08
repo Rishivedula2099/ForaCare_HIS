@@ -13,6 +13,7 @@ import {
   Printer,
   ShieldCheck,
   SlidersHorizontal,
+  KeyRound,
   Palette,
 } from "lucide-react";
 import { MAIN_NAV_ITEMS } from "@/lib/constants";
@@ -30,6 +31,7 @@ const ICONS_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Printer,
   ShieldCheck,
   SlidersHorizontal,
+  KeyRound,
 };
 
 export function Sidebar() {

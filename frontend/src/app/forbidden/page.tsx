@@ -4,13 +4,11 @@ import Link from "next/link";
 import { ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/states/empty-state";
+import { RoleBadge } from "@/components/common/role-badge";
 import { useAuth } from "@/hooks/use-auth";
-import { ROLE_METADATA_MAP } from "@/types/auth";
-import { cn } from "@/lib/utils";
 
 export default function ForbiddenPage() {
   const { user, facility } = useAuth();
-  const roleMeta = user ? ROLE_METADATA_MAP[user.role] : null;
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-slate-50 p-6">
@@ -23,16 +21,7 @@ export default function ForbiddenPage() {
             {user && (
               <div className="flex flex-col items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-3">
                 <p className="text-sm font-semibold text-slate-900">{user.full_name}</p>
-                {roleMeta && (
-                  <span
-                    className={cn(
-                      "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
-                      roleMeta.badgeClassName
-                    )}
-                  >
-                    {roleMeta.label}
-                  </span>
-                )}
+                <RoleBadge role={user.role} />
                 {facility && <p className="text-[11px] text-slate-500">{facility.name}</p>}
               </div>
             )}

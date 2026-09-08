@@ -109,6 +109,15 @@ class ApiClient {
           }
         }
 
+        // Redirect to the shared "access restricted" page on 403 Forbidden
+        if (
+          error.response?.status === 403 &&
+          typeof window !== "undefined" &&
+          !window.location.pathname.startsWith("/forbidden")
+        ) {
+          window.location.href = "/forbidden";
+        }
+
         return Promise.reject(normalizedError);
       }
     );

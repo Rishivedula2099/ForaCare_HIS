@@ -7,14 +7,15 @@ import { findFacilityById, MOCK_FACILITIES, mockLogin } from "@/lib/auth-mock";
 import { UserRole } from "@/lib/constants";
 import { ApiError } from "@/types/api";
 import {
+  adaptBackendUser,
   AuthContextType,
   AuthSession,
   AuthTokens,
   AuthUser,
+  BackendUserPayload,
   ChangePasswordInput,
   Facility,
   LoginCredentials,
-  ROLE_METADATA_MAP,
   Tenant,
 } from "@/types/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -37,7 +38,10 @@ interface StoredSession {
   facility: Facility;
 }
 
-interface LoginResponseData extends StoredSession {
+interface LoginResponseData {
+  user: BackendUserPayload;
+  tenant: Tenant;
+  facility: Facility;
   tokens: AuthTokens;
 }
 
@@ -154,7 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         facility_id: credentials.facility_id,
       });
       if (!response.data) throw new Error("Empty login response from server.");
-      session = response.data;
+      session = { ...response.data, user: adaptBackendUser(response.data.user) };
     } catch (error) {
       if (!isNetworkError(error)) {
         const apiError = error as ApiError;
@@ -227,8 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasPermission = React.useCallback(
     (permission: string) => {
       if (!user) return false;
-      const metadata = ROLE_METADATA_MAP[user.role];
-      return metadata.keyPermissions.some((p) => p.toLowerCase().includes(permission.toLowerCase()));
+      return user.permissions.includes(permission);
     },
     [user]
   );

@@ -1,25 +1,12 @@
-import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-
-
-class UserRole(str, enum.Enum):
-    """Mirrors `ROLES` in frontend/src/lib/constants.ts - keep both in sync."""
-
-    SUPER_ADMIN = "SUPER_ADMIN"
-    HOSPITAL_ADMIN = "HOSPITAL_ADMIN"
-    RECEPTIONIST = "RECEPTIONIST"
-    DOCTOR = "DOCTOR"
-    NURSE = "NURSE"
-    LAB_TECH = "LAB_TECH"
-    LAB_APPROVER = "LAB_APPROVER"
-    AUDITOR = "AUDITOR"
+from app.modules.rbac.models import Role
 
 
 class User(Base):
@@ -36,7 +23,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False)
+    role_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("roles.id"), nullable=False)
+    role: Mapped[Role] = relationship(lazy="joined")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)

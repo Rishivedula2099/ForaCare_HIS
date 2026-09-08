@@ -13,6 +13,7 @@ from app.core.database import Base
 # registered on `Base.metadata` before autogenerate compares against it.
 from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.facilities import models as facilities_models  # noqa: F401
+from app.modules.rbac import models as rbac_models  # noqa: F401
 from app.modules.tenants import models as tenants_models  # noqa: F401
 
 config = context.config

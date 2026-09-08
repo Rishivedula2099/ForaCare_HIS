@@ -54,7 +54,7 @@ def _access_token_claims(user: User) -> dict:
         "jti": str(uuid.uuid4()),
         "tenant_id": str(user.tenant_id),
         "facility_id": str(user.facility_id),
-        "role": user.role.value,
+        "role": user.role.code,
     }
 
 
