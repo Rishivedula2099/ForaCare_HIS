@@ -14,6 +14,7 @@ from app.core.database import Base
 from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.facilities import models as facilities_models  # noqa: F401
+from app.modules.patients import models as patients_models  # noqa: F401
 from app.modules.rbac import models as rbac_models  # noqa: F401
 from app.modules.tenants import models as tenants_models  # noqa: F401
 

@@ -350,7 +350,7 @@ export default function PatientsDirectoryPage() {
               <Table>
                 <TableHeader className="bg-slate-50">
                   <TableRow>
-                    <TableHead className="w-[180px]">Patient UID &amp; MRN</TableHead>
+                    <TableHead className="w-45">Patient UID &amp; MRN</TableHead>
                     <TableHead>Patient Demographics</TableHead>
                     <TableHead>Contact &amp; Address</TableHead>
                     <TableHead>Identity &amp; ABHA</TableHead>
@@ -423,7 +423,7 @@ export default function PatientsDirectoryPage() {
                           <Phone className="w-3 h-3 text-slate-400" />
                           +91 {pat.mobile}
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate max-w-[200px] mt-0.5">
+                        <div className="text-[11px] text-slate-500 truncate max-w-50 mt-0.5">
                           {pat.address.city}, {pat.address.state}
                         </div>
                       </TableCell>
@@ -823,16 +823,30 @@ export default function PatientsDirectoryPage() {
 
                 {/* Modal Footer Actions */}
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.print()}
-                    className="text-xs gap-1 w-full sm:w-auto"
-                  >
-                    <Printer className="w-3.5 h-3.5 text-slate-600" />
-                    Print ID Card
-                  </Button>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.print()}
+                      className="text-xs gap-1 w-full sm:w-auto"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-slate-600" />
+                      Print ID Card
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        setIsDetailOpen(false);
+                        router.push(`/patients/${selectedPatient.id}`);
+                      }}
+                      className="text-xs gap-1 bg-primary text-white hover:bg-primary/90 w-full sm:w-auto"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Open Patient 360
+                    </Button>
+                  </div>
 
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <Button
