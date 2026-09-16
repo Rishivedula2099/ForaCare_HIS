@@ -23,12 +23,16 @@ export interface AuthUser {
   id: string;
   username: string;
   email: string;
+  phone: string | null;
   full_name: string;
   role: UserRole;
+  roleNumericCode: number;
   permissions: string[];
   tenant_id: string;
   facility_id: string;
   is_active: boolean;
+  email_verified: boolean;
+  phone_verified: boolean;
 }
 
 /** Raw `/auth/login` and `/auth/me` user shape - `role` is nested, not flattened. */
@@ -36,12 +40,15 @@ export interface BackendUserPayload {
   id: string;
   username: string;
   email: string;
+  phone: string | null;
   full_name: string;
-  role: { id: string; code: UserRole; name: string; description?: string };
+  role: { id: string; numeric_code: number; code: UserRole; name: string; description?: string };
   permissions: string[];
   tenant_id: string;
   facility_id: string;
   is_active: boolean;
+  email_verified: boolean;
+  phone_verified: boolean;
 }
 
 export function adaptBackendUser(raw: BackendUserPayload): AuthUser {
@@ -49,18 +56,25 @@ export function adaptBackendUser(raw: BackendUserPayload): AuthUser {
     id: raw.id,
     username: raw.username,
     email: raw.email,
+    phone: raw.phone,
     full_name: raw.full_name,
     role: raw.role.code,
+    roleNumericCode: raw.role.numeric_code,
     permissions: raw.permissions,
     tenant_id: raw.tenant_id,
     facility_id: raw.facility_id,
     is_active: raw.is_active,
+    email_verified: raw.email_verified,
+    phone_verified: raw.phone_verified,
   };
 }
 
-export interface AuthTokens {
-  access_token: string;
-  refresh_token: string;
+/**
+ * Non-secret metadata about the session the backend just established. The
+ * actual access/refresh JWTs are never in this payload - they arrive only
+ * as HttpOnly cookies set on the response (S1-F01).
+ */
+export interface SessionMeta {
   token_type: "bearer";
   expires_in: number;
 }
@@ -69,7 +83,7 @@ export interface AuthSession {
   user: AuthUser;
   tenant: Tenant;
   facility: Facility;
-  tokens: AuthTokens;
+  session: SessionMeta;
 }
 
 export interface LoginCredentials {

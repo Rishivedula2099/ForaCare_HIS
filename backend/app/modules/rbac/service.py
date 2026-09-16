@@ -15,6 +15,7 @@ async def list_roles(db: AsyncSession) -> list[RoleSummaryOut]:
     return [
         RoleSummaryOut(
             id=role.id,
+            numeric_code=role.numeric_code,
             code=role.code,
             name=role.name,
             description=role.description,
@@ -37,6 +38,7 @@ async def get_role(db: AsyncSession, role_id: uuid.UUID) -> RoleDetailOut:
     role = await _get_role_or_404(db, role_id)
     return RoleDetailOut(
         id=role.id,
+        numeric_code=role.numeric_code,
         code=role.code,
         name=role.name,
         description=role.description,
@@ -79,6 +81,7 @@ async def set_role_permissions(
 
     return RoleDetailOut(
         id=role.id,
+        numeric_code=role.numeric_code,
         code=role.code,
         name=role.name,
         description=role.description,

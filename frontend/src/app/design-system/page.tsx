@@ -116,7 +116,7 @@ export default function DesignSystemPage() {
                     <Logo variant="full" size="lg" />
                   </div>
                   <p className="text-xs text-slate-500 italic mt-1">
-                    "One Patient. One Record. Better Care."
+                    &ldquo;One Patient. One Record. Better Care.&rdquo;
                   </p>
                 </div>
 

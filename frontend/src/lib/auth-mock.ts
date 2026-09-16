@@ -76,6 +76,19 @@ const MAIN_FACILITY_ID = MOCK_FACILITIES[0].id;
 const METRO_FACILITY_ID = MOCK_FACILITIES[2].id;
 const SOUTH_FACILITY_ID = MOCK_FACILITIES[1].id;
 
+/** Mirrors app/modules/rbac/constants.py::SYSTEM_ROLE_NUMERIC_CODES. */
+const MOCK_ROLE_NUMERIC_CODES: Record<UserRole, number> = {
+  [ROLES.SUPER_ADMIN]: 1,
+  [ROLES.HOSPITAL_ADMIN]: 2,
+  [ROLES.DOCTOR]: 3,
+  [ROLES.NURSE]: 4,
+  [ROLES.RECEPTIONIST]: 5,
+  [ROLES.BILLING_CASHIER]: 6,
+  [ROLES.LAB_TECH]: 7,
+  [ROLES.LAB_APPROVER]: 8,
+  [ROLES.AUDITOR]: 9,
+};
+
 export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
   {
     password: "Demo@123",
@@ -83,12 +96,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333301",
       username: "super.admin",
       email: "super.admin@foracare-his.com",
+      phone: null,
       full_name: "Ananya Kapoor",
       role: ROLES.SUPER_ADMIN,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.SUPER_ADMIN],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.SUPER_ADMIN],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
   {
@@ -97,12 +114,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333302",
       username: "hospital.admin",
       email: "hospital.admin@foracare-his.com",
+      phone: null,
       full_name: "Vikram Seth",
       role: ROLES.HOSPITAL_ADMIN,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.HOSPITAL_ADMIN],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.HOSPITAL_ADMIN],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
   {
@@ -111,12 +132,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333303",
       username: "receptionist",
       email: "rahul.deshmukh@foracare-his.com",
+      phone: null,
       full_name: "Rahul Deshmukh",
       role: ROLES.RECEPTIONIST,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.RECEPTIONIST],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.RECEPTIONIST],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
   {
@@ -125,12 +150,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333309",
       username: "billing.cashier",
       email: "billing.cashier@foracare-his.com",
+      phone: null,
       full_name: "Kavita Menon",
       role: ROLES.BILLING_CASHIER,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.BILLING_CASHIER],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.BILLING_CASHIER],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
   {
@@ -139,12 +168,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333304",
       username: "dr.priya",
       email: "priya.raman@foracare-his.com",
+      phone: null,
       full_name: "Dr. Priya Raman",
       role: ROLES.DOCTOR,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.DOCTOR],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.DOCTOR],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
   {
@@ -153,12 +186,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333305",
       username: "nurse.mary",
       email: "mary.joseph@foracare-his.com",
+      phone: null,
       full_name: "Sister Mary Joseph",
       role: ROLES.NURSE,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.NURSE],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.NURSE],
       tenant_id: MOCK_TENANT.id,
       facility_id: MAIN_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
   {
@@ -167,12 +204,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333306",
       username: "lab.tech",
       email: "lab.tech@foracare-his.com",
+      phone: null,
       full_name: "Sanjay Iyer",
       role: ROLES.LAB_TECH,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.LAB_TECH],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.LAB_TECH],
       tenant_id: MOCK_TENANT.id,
       facility_id: METRO_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
   {
@@ -181,12 +222,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333307",
       username: "lab.approver",
       email: "anirudh.sen@foracare-his.com",
+      phone: null,
       full_name: "Dr. Anirudh Sen",
       role: ROLES.LAB_APPROVER,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.LAB_APPROVER],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.LAB_APPROVER],
       tenant_id: MOCK_TENANT.id,
       facility_id: METRO_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
   {
@@ -195,12 +240,16 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       id: "33333333-3333-3333-3333-333333333308",
       username: "auditor",
       email: "auditor@foracare-his.com",
+      phone: null,
       full_name: "Meera Nair",
       role: ROLES.AUDITOR,
+      roleNumericCode: MOCK_ROLE_NUMERIC_CODES[ROLES.AUDITOR],
       permissions: MOCK_ROLE_PERMISSIONS[ROLES.AUDITOR],
       tenant_id: MOCK_TENANT.id,
       facility_id: SOUTH_FACILITY_ID,
       is_active: true,
+      email_verified: true,
+      phone_verified: false,
     },
   },
 ];
@@ -219,21 +268,18 @@ export const DEMO_PRESETS: DemoPreset[] = MOCK_STAFF_DIRECTORY.map(({ user, pass
   password,
 }));
 
-function generateMockToken(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-}
-
 export function findFacilityById(facilityId: string): Facility | undefined {
   return MOCK_FACILITIES.find((facility) => facility.id === facilityId);
 }
 
 /**
- * TODO(temporary): sign-in is bypassed for local development, mirroring
- * the backend's dev-only bypass (see
- * `backend/app/modules/auth/service.py::authenticate_user`) - any
- * email/username + any password succeeds. A known username/email logs in
- * as that staff member; anything else falls back to the first demo user.
- * Restore the exact-match check below before enabling real auth.
+ * Offline demo fallback only - used when the real backend is unreachable
+ * (network error), never as a substitute for real authentication when the
+ * backend is up. Any password matches a known username/email so every
+ * clinical role can be demoed without a running backend; unknown input
+ * falls back to the first demo user. There is no token of any kind here -
+ * real sessions are HttpOnly cookies set by the backend (S1-F01), and this
+ * mock path never talks to a real server, so it has nothing to store.
  */
 export async function mockLogin(username: string, password: string): Promise<AuthSession> {
   await new Promise((resolve) => setTimeout(resolve, 400));
@@ -250,11 +296,9 @@ export async function mockLogin(username: string, password: string): Promise<Aut
     user: match.user,
     tenant: MOCK_TENANT,
     facility,
-    tokens: {
-      access_token: generateMockToken("mock_access"),
-      refresh_token: generateMockToken("mock_refresh"),
+    session: {
       token_type: "bearer",
-      expires_in: 30 * 60,
+      expires_in: 15 * 60,
     },
   };
 }

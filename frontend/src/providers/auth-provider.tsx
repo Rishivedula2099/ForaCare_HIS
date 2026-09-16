@@ -10,7 +10,6 @@ import {
   adaptBackendUser,
   AuthContextType,
   AuthSession,
-  AuthTokens,
   AuthUser,
   BackendUserPayload,
   ChangePasswordInput,
@@ -20,20 +19,25 @@ import {
 } from "@/types/auth";
 import { useToast } from "@/hooks/use-toast";
 
-const STORAGE_KEYS = {
-  accessToken: "foracare_access_token",
-  refreshToken: "foracare_refresh_token",
-  tenantId: "foracare_tenant_id",
-  facilityId: "foracare_facility_id",
-  session: "foracare_session",
-} as const;
+// Real sessions are HttpOnly cookies set by the backend (S1-F01) - nothing
+// about them is ever stored here. This key only caches the *offline demo*
+// fallback session (see auth-mock.ts) in sessionStorage, since that mode
+// has no real cookie to persist it and must survive a page refresh some
+// other way. It holds user/tenant/facility only - never a token.
+const MOCK_SESSION_STORAGE_KEY = "foracare_mock_session";
 
 const IDLE_LIMIT_MS = 15 * 60 * 1000;
 const IDLE_WARNING_MS = 60 * 1000;
 const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
 
-interface StoredSession {
+interface StoredMockSession {
   user: AuthUser;
+  tenant: Tenant;
+  facility: Facility;
+}
+
+interface MeResponseData {
+  user: BackendUserPayload;
   tenant: Tenant;
   facility: Facility;
 }
@@ -42,7 +46,6 @@ interface LoginResponseData {
   user: BackendUserPayload;
   tenant: Tenant;
   facility: Facility;
-  tokens: AuthTokens;
 }
 
 interface SessionTimeoutState {
@@ -57,26 +60,22 @@ interface InternalAuthContextType extends AuthContextType {
 
 const AuthContext = React.createContext<InternalAuthContextType | null>(null);
 
-function persistSession(session: AuthSession) {
-  localStorage.setItem(STORAGE_KEYS.accessToken, session.tokens.access_token);
-  localStorage.setItem(STORAGE_KEYS.refreshToken, session.tokens.refresh_token);
-  localStorage.setItem(STORAGE_KEYS.tenantId, session.tenant.id);
-  localStorage.setItem(STORAGE_KEYS.facilityId, session.facility.id);
-  localStorage.setItem(
-    STORAGE_KEYS.session,
+function persistMockSession(session: AuthSession) {
+  sessionStorage.setItem(
+    MOCK_SESSION_STORAGE_KEY,
     JSON.stringify({ user: session.user, tenant: session.tenant, facility: session.facility })
   );
 }
 
-function clearSession() {
-  Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
+function clearMockSession() {
+  sessionStorage.removeItem(MOCK_SESSION_STORAGE_KEY);
 }
 
-function readStoredSession(): StoredSession | null {
+function readStoredMockSession(): StoredMockSession | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.session);
+    const raw = sessionStorage.getItem(MOCK_SESSION_STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as StoredSession;
+    return JSON.parse(raw) as StoredMockSession;
   } catch {
     return null;
   }
@@ -104,48 +103,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const lastActivityRef = React.useRef<number>(0);
   const isAuthenticatedRef = React.useRef(false);
 
-  // Hydrate from localStorage on mount so a page refresh doesn't log the
-  // user out. This can only run client-side (localStorage isn't available
-  // during SSR/static generation), so a one-time effect - not a lazy
-  // useState initializer - is the correct, SSR-safe way to read it.
-  /* eslint-disable react-hooks/set-state-in-effect */
+  // Hydrate on mount. The real session lives in HttpOnly cookies the
+  // browser already sent with this call - there is no client-side token to
+  // read - so we simply ask the backend who (if anyone) is authenticated.
+  // Only the offline mock fallback needs a client-side snapshot, since it
+  // has no backend session to ask.
   React.useEffect(() => {
-    lastActivityRef.current = Date.now();
-    const stored = readStoredSession();
-    const hasToken = !!localStorage.getItem(STORAGE_KEYS.accessToken);
+    let cancelled = false;
 
-    if (stored && hasToken) {
-      setUser(stored.user);
-      setTenant(stored.tenant);
-      setFacility(stored.facility);
-      const refreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken);
-      setIsUsingMockAuth(!!refreshToken?.startsWith("mock_"));
+    async function hydrate() {
+      lastActivityRef.current = Date.now();
+      try {
+        const response = await apiClient.get<MeResponseData>("/auth/me");
+        if (cancelled) return;
+        if (response.data) {
+          setUser(adaptBackendUser(response.data.user));
+          setTenant(response.data.tenant);
+          setFacility(response.data.facility);
+          setIsUsingMockAuth(false);
+          clearMockSession();
+        }
+      } catch (error) {
+        if (cancelled) return;
+        if (isNetworkError(error)) {
+          const stored = readStoredMockSession();
+          if (stored) {
+            setUser(stored.user);
+            setTenant(stored.tenant);
+            setFacility(stored.facility);
+            setIsUsingMockAuth(true);
+          }
+        }
+        // A 401 simply means "not logged in" - nothing to restore.
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
     }
-    setIsLoading(false);
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   React.useEffect(() => {
     isAuthenticatedRef.current = !!user;
   }, [user]);
 
   const logout = React.useCallback(async () => {
-    const refreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken);
-    if (refreshToken && !refreshToken.startsWith("mock_")) {
+    if (!isUsingMockAuth) {
       try {
-        await apiClient.post("/auth/logout", { refresh_token: refreshToken });
+        await apiClient.post("/auth/logout");
       } catch {
         // best-effort - still clear local state below even if the server call fails.
       }
     }
-    clearSession();
+    clearMockSession();
     setUser(null);
     setTenant(null);
     setFacility(null);
     setIsUsingMockAuth(false);
     setSessionTimeout({ isWarningVisible: false, secondsRemaining: IDLE_WARNING_MS / 1000 });
     router.push("/login");
-  }, [router]);
+  }, [isUsingMockAuth, router]);
 
   const login = React.useCallback(async (credentials: LoginCredentials) => {
     let session: AuthSession;
@@ -158,7 +178,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         facility_id: credentials.facility_id,
       });
       if (!response.data) throw new Error("Empty login response from server.");
-      session = { ...response.data, user: adaptBackendUser(response.data.user) };
+      session = {
+        user: adaptBackendUser(response.data.user),
+        tenant: response.data.tenant,
+        facility: response.data.facility,
+        session: { token_type: "bearer", expires_in: 15 * 60 },
+      };
     } catch (error) {
       if (!isNetworkError(error)) {
         const apiError = error as ApiError;
@@ -169,7 +194,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       usedMock = true;
     }
 
-    persistSession(session);
+    if (usedMock) {
+      persistMockSession(session);
+    } else {
+      clearMockSession();
+    }
     setUser(session.user);
     setTenant(session.tenant);
     setFacility(session.facility);
@@ -182,17 +211,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const target = findFacilityById(facilityId) ?? MOCK_FACILITIES.find((f) => f.id === facilityId);
       if (!target) return;
       setFacility(target);
-      localStorage.setItem(STORAGE_KEYS.facilityId, target.id);
-      const stored = readStoredSession();
-      if (stored) {
-        localStorage.setItem(
-          STORAGE_KEYS.session,
-          JSON.stringify({ ...stored, facility: target })
-        );
+      if (isUsingMockAuth) {
+        const stored = readStoredMockSession();
+        if (stored) {
+          persistMockSession({
+            user: stored.user,
+            tenant: stored.tenant,
+            facility: target,
+            session: { token_type: "bearer", expires_in: 15 * 60 },
+          });
+        }
       }
       toast({ title: "Facility switched", description: target.name, variant: "info" });
     },
-    [toast]
+    [isUsingMockAuth, toast]
   );
 
   const changePassword = React.useCallback(

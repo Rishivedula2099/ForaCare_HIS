@@ -14,6 +14,7 @@ class PermissionOut(BaseModel):
 
 class RoleSummaryOut(BaseModel):
     id: uuid.UUID
+    numeric_code: int
     code: str
     name: str
     description: str | None = None
@@ -25,6 +26,7 @@ class RoleSummaryOut(BaseModel):
 
 class RoleDetailOut(BaseModel):
     id: uuid.UUID
+    numeric_code: int
     code: str
     name: str
     description: str | None = None
