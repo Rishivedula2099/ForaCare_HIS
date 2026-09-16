@@ -27,10 +27,18 @@ class Settings(BaseSettings):
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
 
-    jwt_secret_key: str = "local-dev-only-insecure-secret-change-me"
+    jwt_access_secret_key: str = "local-dev-only-insecure-access-secret-change-me"
+    jwt_refresh_secret_key: str = "local-dev-only-insecure-refresh-secret-change-me"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
-    refresh_token_expire_days: int = 7
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 3
+
+    cookie_domain: str | None = None
+    session_cookie_samesite: str = "lax"
+
+    otp_expire_minutes: int = 10
+    otp_max_attempts: int = 5
+    otp_resend_cooldown_seconds: int = 60
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -39,6 +47,10 @@ class Settings(BaseSettings):
     @property
     def is_local(self) -> bool:
         return self.environment.lower() == "local"
+
+    @property
+    def cookie_secure(self) -> bool:
+        return not self.is_local
 
 
 @lru_cache

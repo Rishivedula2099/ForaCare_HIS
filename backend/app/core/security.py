@@ -1,12 +1,14 @@
 import hashlib
-import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 import bcrypt
 import jwt
 
 from app.core.config import get_settings
+
+TokenType = Literal["access", "refresh"]
 
 
 def hash_password(password: str) -> str:
@@ -20,25 +22,54 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(claims: dict[str, Any]) -> str:
+def _secret_for(token_type: TokenType) -> str:
+    settings = get_settings()
+    return settings.jwt_access_secret_key if token_type == "access" else settings.jwt_refresh_secret_key
+
+
+def create_token(
+    *,
+    token_type: TokenType,
+    sub: str,
+    sid: str,
+    tenant_id: str,
+    facility_id: str,
+    role: str,
+    jti: str | None = None,
+) -> tuple[str, str, datetime]:
+    """Encodes an access or refresh JWT. Returns (token, jti, expires_at)."""
     settings = get_settings()
     now = datetime.now(timezone.utc)
+    lifetime = (
+        timedelta(minutes=settings.access_token_expire_minutes)
+        if token_type == "access"
+        else timedelta(days=settings.refresh_token_expire_days)
+    )
+    expires_at = now + lifetime
+    token_jti = jti or str(uuid.uuid4())
+
     payload = {
-        **claims,
+        "sub": sub,
+        "sid": sid,
+        "jti": token_jti,
+        "type": token_type,
+        "tenant_id": tenant_id,
+        "facility_id": facility_id,
+        "role": role,
         "iat": now,
-        "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
+        "exp": expires_at,
     }
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    token = jwt.encode(payload, _secret_for(token_type), algorithm=settings.jwt_algorithm)
+    return token, token_jti, expires_at
 
 
-def decode_access_token(token: str) -> dict[str, Any]:
+def decode_token(token: str, *, expected_type: TokenType) -> dict[str, Any]:
     settings = get_settings()
-    return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    claims = jwt.decode(token, _secret_for(expected_type), algorithms=[settings.jwt_algorithm])
+    if claims.get("type") != expected_type:
+        raise jwt.InvalidTokenError(f"Expected a {expected_type} token.")
+    return claims
 
 
-def generate_refresh_token() -> str:
-    return secrets.token_urlsafe(48)
-
-
-def hash_refresh_token(raw_token: str) -> str:
-    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+def hash_token_jti(jti: str) -> str:
+    return hashlib.sha256(jti.encode("utf-8")).hexdigest()

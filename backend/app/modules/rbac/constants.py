@@ -32,6 +32,21 @@ SYSTEM_ROLE_NAMES: dict[str, str] = {
     SystemRole.AUDITOR: "Auditor",
 }
 
+# Stable integer identifiers (per the P1-B07 role review), independent of
+# the string `code` (application key) and `name` (UI label) - never used
+# for authorization decisions, only as a durable numeric reference.
+SYSTEM_ROLE_NUMERIC_CODES: dict[str, int] = {
+    SystemRole.SUPER_ADMIN: 1,
+    SystemRole.HOSPITAL_ADMIN: 2,
+    SystemRole.DOCTOR: 3,
+    SystemRole.NURSE: 4,
+    SystemRole.RECEPTIONIST: 5,
+    SystemRole.BILLING_CASHIER: 6,
+    SystemRole.LAB_TECH: 7,
+    SystemRole.LAB_APPROVER: 8,
+    SystemRole.AUDITOR: 9,
+}
+
 # (code, module, description) - a representative starting catalog. Extend as
 # real feature modules get built; nothing about the RBAC mechanism assumes
 # this list is exhaustive.

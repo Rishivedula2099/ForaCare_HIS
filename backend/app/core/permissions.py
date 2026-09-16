@@ -1,35 +1,25 @@
 import uuid
 
-import jwt
 from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.context import set_tenant_context
+from app.core.cookies import ACCESS_COOKIE_NAME
 from app.core.database import get_db
 from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
-from app.core.security import decode_access_token
+from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.rbac.models import Role
 
 
-def _extract_bearer_token(request: Request) -> str:
-    authorization = request.headers.get("Authorization")
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise UnauthorizedError("Missing or malformed Authorization header.")
-    return authorization.split(" ", 1)[1].strip()
-
-
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
-    token = _extract_bearer_token(request)
+    access_token = request.cookies.get(ACCESS_COOKIE_NAME)
+    if not access_token:
+        raise UnauthorizedError("Not authenticated.")
 
-    try:
-        claims = decode_access_token(token)
-    except jwt.ExpiredSignatureError as exc:
-        raise UnauthorizedError("Access token has expired.") from exc
-    except jwt.InvalidTokenError as exc:
-        raise UnauthorizedError("Invalid access token.") from exc
+    claims, _session = await auth_service.get_session_for_access_token(db, access_token)
 
     try:
         user_id = uuid.UUID(claims["sub"])

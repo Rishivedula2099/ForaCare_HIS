@@ -23,7 +23,6 @@ import {
   UserPlus,
   Ticket,
   PlusCircle,
-  FileCheck,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
@@ -99,6 +98,33 @@ const RECENT_QUEUE = [
     time: "10:45 AM",
     status: "waiting",
     statusLabel: "Waiting",
+  },
+];
+
+const ALERTS = [
+  {
+    count: 6,
+    title: "Lab orders awaiting approval",
+    subtitle: "Pathologist review required",
+    dotColor: "bg-rose-500",
+  },
+  {
+    count: 3,
+    title: "Patients awaiting admission",
+    subtitle: "Bed assignment required",
+    dotColor: "bg-orange-500",
+  },
+  {
+    count: 8,
+    title: "Pending discharge summaries",
+    subtitle: "Doctor action required",
+    dotColor: "bg-amber-500",
+  },
+  {
+    count: 2,
+    title: "Low-stock medical items",
+    subtitle: "Pharmacy inventory",
+    dotColor: "bg-blue-500",
   },
 ];
 
@@ -271,20 +297,41 @@ export default function HomePage() {
               </CardContent>
             </Card>
 
-            <Card className="shadow-xs border-slate-200 bg-slate-900 text-white">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center gap-2 text-teal-400 font-semibold text-xs uppercase tracking-wider">
-                  <FileCheck className="w-4 h-4" />
-                  Technical Foundation
+            <Card className="shadow-xs border-slate-200">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <div>
+                  <CardTitle className="text-base">Alerts & Pending Actions</CardTitle>
+                  <CardDescription className="text-xs">
+                    Items requiring attention
+                  </CardDescription>
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Phase 1 Next.js architecture initialized with App Router, TypeScript,
-                  Tailwind CSS, shadcn/ui design tokens, and normalized API client.
-                </p>
-                <div className="pt-1 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800">
-                  <span>API Base: /api/v1</span>
-                  <span className="text-emerald-400 font-medium">Ready for P1-B01</span>
-                </div>
+                <Button variant="outline" size="sm" className="text-xs h-8">
+                  View All
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3 text-xs">
+                {ALERTS.map((alert) => (
+                  <div
+                    key={alert.title}
+                    className="flex items-start gap-2.5 pb-2.5 border-b border-slate-100 last:border-0 last:pb-0"
+                  >
+                    <span
+                      className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${alert.dotColor}`}
+                    />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <div className="font-medium text-slate-800 leading-tight">
+                        <span className="font-semibold text-slate-900">
+                          {alert.count}
+                        </span>
+                        {" — "}
+                        {alert.title}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {alert.subtitle}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </div>

@@ -70,7 +70,9 @@ export default function PatientsDirectoryPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [copiedUid, setCopiedUid] = useState<string | null>(null);
 
-  // Load patients from store
+  // Load patients from store. Reads from localStorage (SSR-safe only via a
+  // client-side effect, not a lazy useState initializer).
+  /* eslint-disable react-hooks/set-state-in-effect */
   const refreshPatients = () => {
     const list = getPatients();
     setPatients(list);
@@ -79,6 +81,7 @@ export default function PatientsDirectoryPage() {
   useEffect(() => {
     refreshPatients();
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Filtered & Searched patients
   const filteredPatients = useMemo(() => {

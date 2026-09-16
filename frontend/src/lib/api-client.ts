@@ -9,13 +9,24 @@ import { API_BASE_URL } from "@/lib/constants";
 import { generateCorrelationId } from "@/lib/utils";
 import { ApiError, ApiErrorDetail, ApiResponse } from "@/types/api";
 
+interface RetryableRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean;
+}
+
 class ApiClient {
   private instance: AxiosInstance;
+  // Single-flight guard: concurrent 401s share one in-flight refresh call
+  // instead of each triggering their own (S1-F04).
+  private refreshPromise: Promise<void> | null = null;
 
   constructor() {
     this.instance = axios.create({
       baseURL: API_BASE_URL,
       timeout: 30000,
+      // Access/refresh tokens live only in HttpOnly cookies set by the
+      // backend (S1-F01) - never in JS-readable storage - so every request
+      // must carry the browser's cookie jar for the backend to authenticate it.
+      withCredentials: true,
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
@@ -26,32 +37,11 @@ class ApiClient {
   }
 
   private setupInterceptors(): void {
-    // Request Interceptor: Injects auth token, tenancy context, and correlation ID
+    // Request Interceptor: attaches a correlation ID for end-to-end tracing.
     this.instance.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
-        // Set request correlation ID for end-to-end tracing
         const correlationId = generateCorrelationId();
         config.headers.set("X-Request-Id", correlationId);
-
-        // Inject saved auth token if in browser environment
-        if (typeof window !== "undefined") {
-          const token = localStorage.getItem("foracare_access_token");
-          if (token) {
-            config.headers.set("Authorization", `Bearer ${token}`);
-          }
-
-          // Inject active facility & tenant context headers
-          const activeTenantId = localStorage.getItem("foracare_tenant_id");
-          const activeFacilityId = localStorage.getItem("foracare_facility_id");
-
-          if (activeTenantId) {
-            config.headers.set("X-Tenant-Id", activeTenantId);
-          }
-          if (activeFacilityId) {
-            config.headers.set("X-Facility-Id", activeFacilityId);
-          }
-        }
-
         return config;
       },
       (error) => Promise.reject(error)
@@ -60,7 +50,7 @@ class ApiClient {
     // Response Interceptor: Normalizes error responses to standardized ApiError format
     this.instance.interceptors.response.use(
       (response: AxiosResponse) => response,
-      (error: AxiosError) => {
+      async (error: AxiosError) => {
         const requestId =
           (error.config?.headers?.["X-Request-Id"] as string) ||
           generateCorrelationId();
@@ -97,15 +87,35 @@ class ApiClient {
           normalizedError.request_id = body.meta.request_id;
         }
 
-        // Auto logout on 401 Unauthorized
         if (error.response?.status === 401 && typeof window !== "undefined") {
-          localStorage.removeItem("foracare_access_token");
-          localStorage.removeItem("foracare_refresh_token");
-          if (!window.location.pathname.startsWith("/login")) {
-            // Avoid infinite redirect loop if already on login page
-            window.location.href = `/login?redirect=${encodeURIComponent(
-              window.location.pathname
-            )}`;
+          const originalRequest = error.config as RetryableRequestConfig | undefined;
+          const requestUrl = originalRequest?.url || "";
+          const isAuthEndpoint =
+            requestUrl.includes("/auth/refresh") || requestUrl.includes("/auth/login");
+          const canAttemptRefresh =
+            !isAuthEndpoint && !!originalRequest && !originalRequest._retry;
+
+          if (canAttemptRefresh) {
+            originalRequest._retry = true;
+            try {
+              await this.refreshSession();
+              return this.instance(originalRequest);
+            } catch {
+              const sessionExpiredError: ApiError = {
+                success: false,
+                code: "SESSION_EXPIRED",
+                message: "Your session has expired. Please sign in again.",
+                details: [],
+                status_code: 401,
+                request_id: requestId,
+              };
+              this.redirectToLogin();
+              return Promise.reject(sessionExpiredError);
+            }
+          } else if (!isAuthEndpoint) {
+            // Refresh already attempted for this request (or nothing to
+            // retry) - end the session.
+            this.redirectToLogin();
           }
         }
 
@@ -121,6 +131,34 @@ class ApiClient {
         return Promise.reject(normalizedError);
       }
     );
+  }
+
+  // Ensures concurrent 401s share a single in-flight /auth/refresh call
+  // (S1-F04): the first caller starts the request, later callers await the
+  // same promise instead of triggering their own refresh. The refresh
+  // cookie is sent automatically by the browser - there is no token to
+  // read or pass here.
+  private refreshSession(): Promise<void> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = axios
+        .post<ApiResponse<unknown>>(`${API_BASE_URL}/auth/refresh`, null, {
+          withCredentials: true,
+        })
+        .then(() => undefined)
+        .finally(() => {
+          this.refreshPromise = null;
+        });
+    }
+    return this.refreshPromise;
+  }
+
+  private redirectToLogin(): void {
+    if (!window.location.pathname.startsWith("/login")) {
+      // Avoid infinite redirect loop if already on login page
+      window.location.href = `/login?redirect=${encodeURIComponent(
+        window.location.pathname
+      )}`;
+    }
   }
 
   // Type-safe HTTP Methods

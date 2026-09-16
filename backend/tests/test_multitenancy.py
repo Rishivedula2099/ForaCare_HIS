@@ -1,23 +1,19 @@
+DEMO_PASSWORD = "Demo@123"
+
 SUPER_ADMIN = "super.admin"
 HOSPITAL_ADMIN = "hospital.admin"
 DOCTOR = "dr.priya"
 SUNRISE_ADMIN = "sunrise.admin"
-DEMO_PASSWORD = "Demo@123"
 
 
-def _token(client, username: str, password: str = DEMO_PASSWORD) -> str:
-    response = client.post("/api/v1/auth/login", json={"username": username, "password": password})
-    return response.json()["data"]["tokens"]["access_token"]
-
-
-def _auth(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
+def _login(client, username: str, password: str = DEMO_PASSWORD):
+    return client.post("/api/v1/auth/login", json={"username": username, "password": password})
 
 
 def test_facilities_list_is_scoped_to_callers_tenant(client):
-    token = _token(client, HOSPITAL_ADMIN)
+    _login(client, HOSPITAL_ADMIN)
 
-    response = client.get("/api/v1/facilities", headers=_auth(token))
+    response = client.get("/api/v1/facilities")
 
     assert response.status_code == 200
     facilities = response.json()["data"]
@@ -27,33 +23,33 @@ def test_facilities_list_is_scoped_to_callers_tenant(client):
 
 
 def test_facilities_list_forbidden_without_permission(client):
-    token = _token(client, DOCTOR)
+    _login(client, DOCTOR)
 
-    response = client.get("/api/v1/facilities", headers=_auth(token))
+    response = client.get("/api/v1/facilities")
 
     assert response.status_code == 403
 
 
 def test_cannot_fetch_another_tenants_facility(client):
-    sunrise_token = _token(client, SUNRISE_ADMIN)
-    facilities = client.get("/api/v1/facilities", headers=_auth(sunrise_token)).json()["data"]
+    _login(client, SUNRISE_ADMIN)
+    facilities = client.get("/api/v1/facilities").json()["data"]
     sunrise_facility_id = facilities[0]["id"]
 
-    foracare_admin_token = _token(client, HOSPITAL_ADMIN)
-    response = client.get(
-        f"/api/v1/facilities/{sunrise_facility_id}", headers=_auth(foracare_admin_token)
-    )
+    _login(client, HOSPITAL_ADMIN)
+    response = client.get(f"/api/v1/facilities/{sunrise_facility_id}")
 
     assert response.status_code == 404
 
 
 def test_hospital_admin_can_create_and_update_own_tenant_facility(client):
-    token = _token(client, HOSPITAL_ADMIN)
+    import uuid
 
+    _login(client, HOSPITAL_ADMIN)
+
+    facility_code = f"FC-TEST-{uuid.uuid4().hex[:8].upper()}"
     create_response = client.post(
         "/api/v1/facilities",
-        json={"name": "ForaCare Test Branch", "facility_code": "FC-TEST-99"},
-        headers=_auth(token),
+        json={"name": "ForaCare Test Branch", "facility_code": facility_code},
     )
     assert create_response.status_code == 200
     facility = create_response.json()["data"]
@@ -62,35 +58,32 @@ def test_hospital_admin_can_create_and_update_own_tenant_facility(client):
     update_response = client.patch(
         f"/api/v1/facilities/{facility['id']}",
         json={"is_active": False},
-        headers=_auth(token),
     )
     assert update_response.status_code == 200
     assert update_response.json()["data"]["is_active"] is False
 
 
 def test_tenants_endpoint_requires_super_admin(client):
-    hospital_admin_token = _token(client, HOSPITAL_ADMIN)
-    forbidden = client.get("/api/v1/tenants", headers=_auth(hospital_admin_token))
+    _login(client, HOSPITAL_ADMIN)
+    forbidden = client.get("/api/v1/tenants")
     assert forbidden.status_code == 403
 
-    super_admin_token = _token(client, SUPER_ADMIN)
-    allowed = client.get("/api/v1/tenants", headers=_auth(super_admin_token))
+    _login(client, SUPER_ADMIN)
+    allowed = client.get("/api/v1/tenants")
     assert allowed.status_code == 200
     codes = {tenant["code"] for tenant in allowed.json()["data"]}
     assert {"FORACARE", "SUNRISE"}.issubset(codes)
 
 
 def test_super_admin_can_fetch_any_tenant_by_id_unknown_id_is_404(client):
-    super_admin_token = _token(client, SUPER_ADMIN)
+    _login(client, SUPER_ADMIN)
 
-    tenants = client.get("/api/v1/tenants", headers=_auth(super_admin_token)).json()["data"]
+    tenants = client.get("/api/v1/tenants").json()["data"]
     sunrise_id = next(t["id"] for t in tenants if t["code"] == "SUNRISE")
 
-    found = client.get(f"/api/v1/tenants/{sunrise_id}", headers=_auth(super_admin_token))
+    found = client.get(f"/api/v1/tenants/{sunrise_id}")
     assert found.status_code == 200
     assert found.json()["data"]["code"] == "SUNRISE"
 
-    missing = client.get(
-        "/api/v1/tenants/00000000-0000-0000-0000-000000000000", headers=_auth(super_admin_token)
-    )
+    missing = client.get("/api/v1/tenants/00000000-0000-0000-0000-000000000000")
     assert missing.status_code == 404

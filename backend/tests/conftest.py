@@ -23,3 +23,15 @@ def client():
     # connection pooled by a first request's now-closed loop.
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture(autouse=True)
+def _clear_session_cookies(client):
+    """Auth is cookie-based and `client` is a single session-scoped
+    instance, so its cookie jar would otherwise leak a logged-in session
+    from one test into the next (e.g. a "no token" 401 test running right
+    after a login test). Every test starts logged out.
+    """
+    client.cookies.clear()
+    yield
+    client.cookies.clear()

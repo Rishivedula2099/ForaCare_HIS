@@ -10,6 +10,7 @@ Revises: a3f7c9e2b104
 Create Date: 2026-09-08 11:01:00.000000
 
 """
+from datetime import date
 from typing import Sequence, Union
 
 from alembic import op
@@ -186,7 +187,7 @@ def upgrade() -> None:
                 "guardian_phone": patient.get("guardian_phone"),
                 "guardian_address": patient.get("guardian_address"),
                 **{
-                    k: v
+                    k: (date.fromisoformat(v) if k == "dob" else v)
                     for k, v in patient.items()
                     if k not in ("address", "contacts", "identifiers", "abha", "middle_name",
                                  "guardian_name", "guardian_relationship", "guardian_phone", "guardian_address")
