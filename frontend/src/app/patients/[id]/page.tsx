@@ -32,160 +32,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageLoadingState } from "@/components/states/loading-state";
-import { apiClient } from "@/lib/api-client";
-import { getPatientById, calculateAgeFromDob } from "@/lib/patient-store";
-import { Patient } from "@/types/patient";
-
-interface PatientViewModel {
-  id: string;
-  uid: string;
-  mrn: string;
-  displayName: string;
-  gender: string;
-  dob: string;
-  ageYears: number;
-  bloodGroup: string;
-  maritalStatus?: string;
-  occupation?: string;
-  preferredLanguage?: string;
-  isMinor: boolean;
-  status: string;
-  photoUrl?: string;
-  mobile?: string;
-  secondaryPhone?: string;
-  email?: string;
-  address?: { street: string; city: string; state: string; pincode: string; country: string };
-  guardian?: { name?: string; relationship?: string; phone?: string; address?: string };
-  identifiers: { type: string; idNumber: string; isVerified: boolean }[];
-  abha: { abhaNumber?: string; abhaAddress?: string; status: string; verifiedAt?: string };
-  registeredAt?: string;
-  registeredBy?: string;
-  facilityName?: string;
-}
-
-function fromMockPatient(patient: Patient): PatientViewModel {
-  return {
-    id: patient.id,
-    uid: patient.uid,
-    mrn: patient.mrn,
-    displayName: patient.fullName,
-    gender: patient.gender,
-    dob: patient.dob,
-    ageYears: patient.ageYears,
-    bloodGroup: patient.bloodGroup,
-    maritalStatus: patient.maritalStatus,
-    occupation: patient.occupation,
-    preferredLanguage: patient.preferredLanguage,
-    isMinor: patient.isMinor,
-    status: patient.status,
-    photoUrl: patient.photoUrl,
-    mobile: patient.mobile,
-    secondaryPhone: patient.secondaryPhone,
-    email: patient.email,
-    address: patient.address,
-    guardian: patient.guardian,
-    identifiers: patient.primaryIdentity
-      ? [
-          {
-            type: patient.primaryIdentity.type,
-            idNumber: patient.primaryIdentity.idNumber,
-            isVerified: !!patient.primaryIdentity.isVerified,
-          },
-        ]
-      : [],
-    abha: patient.abha,
-    registeredAt: patient.registeredAt,
-    registeredBy: patient.registeredBy,
-    facilityName: patient.facilityName,
-  };
-}
-
-// Backend `PatientOut` shape (snake_case, nested arrays) - see
-// backend/app/modules/patients/schemas.py.
-interface BackendPatientOut {
-  id: string;
-  uid: string;
-  mrn: string;
-  title: string | null;
-  first_name: string;
-  middle_name: string | null;
-  last_name: string;
-  gender: string;
-  dob: string;
-  blood_group: string;
-  marital_status: string | null;
-  occupation: string | null;
-  preferred_language: string | null;
-  is_minor: boolean;
-  guardian_name: string | null;
-  guardian_relationship: string | null;
-  guardian_phone: string | null;
-  guardian_address: string | null;
-  status: string;
-  created_at: string;
-  address: { street: string; city: string; state: string; pincode: string; country: string } | null;
-  contacts: { contact_type: string; value: string; is_primary: boolean }[];
-  photos: { storage_path: string; is_primary: boolean }[];
-  identifiers: { identity_type: string; id_number: string; is_verified: boolean }[];
-  identity_links: {
-    system: string;
-    external_id: string | null;
-    external_address: string | null;
-    status: string;
-    linked_at: string | null;
-  }[];
-}
-
-function fromBackendPatient(patient: BackendPatientOut): PatientViewModel {
-  const mobile = patient.contacts.find((c) => c.contact_type === "MOBILE")?.value;
-  const secondaryPhone = patient.contacts.find((c) => c.contact_type === "SECONDARY_PHONE")?.value;
-  const email = patient.contacts.find((c) => c.contact_type === "EMAIL")?.value;
-  const abhaLink = patient.identity_links.find((link) => link.system === "ABHA");
-  const primaryPhoto = patient.photos.find((p) => p.is_primary) ?? patient.photos[0];
-
-  return {
-    id: patient.id,
-    uid: patient.uid,
-    mrn: patient.mrn,
-    displayName: [patient.title, patient.first_name, patient.middle_name, patient.last_name]
-      .filter(Boolean)
-      .join(" "),
-    gender: patient.gender,
-    dob: patient.dob,
-    ageYears: calculateAgeFromDob(patient.dob).years,
-    bloodGroup: patient.blood_group,
-    maritalStatus: patient.marital_status ?? undefined,
-    occupation: patient.occupation ?? undefined,
-    preferredLanguage: patient.preferred_language ?? undefined,
-    isMinor: patient.is_minor,
-    status: patient.status,
-    photoUrl: primaryPhoto?.storage_path,
-    mobile,
-    secondaryPhone,
-    email,
-    address: patient.address ?? undefined,
-    guardian: patient.guardian_name
-      ? {
-          name: patient.guardian_name,
-          relationship: patient.guardian_relationship ?? undefined,
-          phone: patient.guardian_phone ?? undefined,
-          address: patient.guardian_address ?? undefined,
-        }
-      : undefined,
-    identifiers: patient.identifiers.map((identifier) => ({
-      type: identifier.identity_type,
-      idNumber: identifier.id_number,
-      isVerified: identifier.is_verified,
-    })),
-    abha: {
-      abhaNumber: abhaLink?.external_id ?? undefined,
-      abhaAddress: abhaLink?.external_address ?? undefined,
-      status: abhaLink?.status ?? "UNVERIFIED",
-      verifiedAt: abhaLink?.linked_at ?? undefined,
-    },
-    registeredAt: patient.created_at,
-  };
-}
+import {
+  fromBackendPatient,
+  getPatient,
+  getPatientPhotoBlobUrl,
+  PatientViewModel,
+} from "@/lib/patient-api";
 
 function EmptyTabState({
   icon: Icon,
@@ -223,22 +75,25 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ cla
 }
 
 async function fetchPatientViewModel(id: string): Promise<PatientViewModel> {
-  try {
-    const response = await apiClient.get<BackendPatientOut>(`/patients/${id}`);
-    if (response.data) {
-      return fromBackendPatient(response.data);
+  // A real API failure (401/403/404/500 - anything the backend actually
+  // responded with) must NOT be swallowed: let it propagate so the page's
+  // `isError` state renders instead of silently pretending the patient
+  // doesn't exist. We only tolerate a genuine network error (dev backend
+  // not running at all) by rethrowing as-is too - there is no mock
+  // fallback anymore since that could mask a real 403/404 as "not found".
+  const backendPatient = await getPatient(id);
+  const viewModel = fromBackendPatient(backendPatient);
+
+  if (viewModel.primaryPhotoId) {
+    try {
+      viewModel.photoUrl = await getPatientPhotoBlobUrl(id, viewModel.primaryPhotoId);
+    } catch (err) {
+      // Non-fatal: the profile still renders without a photo.
+      console.warn("Failed to load patient photo", err);
     }
-  } catch {
-    // Fall through to the localStorage mock below - the registration flow
-    // still writes there until it's wired to this API.
   }
 
-  const mockPatient = getPatientById(id);
-  if (mockPatient) {
-    return fromMockPatient(mockPatient);
-  }
-
-  throw new Error("Patient not found");
+  return viewModel;
 }
 
 export default function PatientProfilePage() {

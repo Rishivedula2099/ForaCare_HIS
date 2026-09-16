@@ -50,20 +50,27 @@ import {
   INDIAN_STATES_AND_UTS,
   Patient,
 } from "@/types/patient";
+import { calculateAgeFromDob, calculateDobFromAge } from "@/lib/patient-store";
 import {
-  registerPatient,
-  checkDuplicates,
-  calculateAgeFromDob,
-  calculateDobFromAge,
-} from "@/lib/patient-store";
+  checkDuplicates as apiCheckDuplicates,
+  createPatient,
+  toCreatePayload,
+  toDuplicateCheckPayload,
+  toPatient,
+  uploadPatientPhoto,
+} from "@/lib/patient-api";
+import { ApiError } from "@/types/api";
 import { PhotoCapture } from "@/components/patients/photo-capture";
 import { AbhaCard } from "@/components/patients/abha-card";
 import { DuplicateAlert } from "@/components/patients/duplicate-alert";
 import { RegistrationSuccessDialog } from "@/components/patients/registration-success-dialog";
+import { useAuthContext } from "@/providers/auth-provider";
+import { ShieldAlert } from "lucide-react";
 
 export default function PatientRegistrationPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { hasPermission } = useAuthContext();
   const [isPending, startTransition] = useTransition();
 
   const [duplicates, setDuplicates] = useState<Patient[]>([]);
@@ -148,37 +155,54 @@ export default function PatientRegistrationPage() {
     }
   };
 
-  // Real-time Deduplication Check
+  // Real-time Deduplication Check - debounced call to the backend
+  // `check-duplicates` endpoint instead of scanning localStorage.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (
-        (watchedMobile && watchedMobile.length >= 10) ||
-        (watchedIdentityNumber && watchedIdentityNumber.length >= 4) ||
-        (watchedFirstName && watchedLastName && watchedDob)
-      ) {
-        const matches = checkDuplicates({
-          mobile: watchedMobile,
-          identityNumber: watchedIdentityNumber,
-          name: `${watchedFirstName} ${watchedLastName}`.trim(),
-          dob: watchedDob,
-        });
-        setDuplicates(matches);
-      } else {
-        setDuplicates([]);
+    if (!hasPermission("patients.manage")) return;
+
+    const hasEnoughSignal =
+      (watchedMobile && watchedMobile.length >= 10) ||
+      (watchedIdentityNumber && watchedIdentityNumber.length >= 4) ||
+      (watchedFirstName && watchedLastName && watchedDob);
+
+    if (!hasEnoughSignal) {
+      setDuplicates([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const matches = await apiCheckDuplicates(
+          toDuplicateCheckPayload({
+            mobile: watchedMobile,
+            identityNumber: watchedIdentityNumber,
+            firstName: watchedFirstName,
+            lastName: watchedLastName,
+            dob: watchedDob,
+          })
+        );
+        if (!cancelled) {
+          setDuplicates(matches.map(toPatient));
+        }
+      } catch (err) {
+        console.warn("Duplicate check failed", err);
+        if (!cancelled) setDuplicates([]);
       }
     }, 400);
 
-    return () => clearTimeout(timer);
-  }, [watchedMobile, watchedIdentityNumber, watchedFirstName, watchedLastName, watchedDob]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [watchedMobile, watchedIdentityNumber, watchedFirstName, watchedLastName, watchedDob, hasPermission]);
 
   // Form Submission
   const onSubmit = (data: PatientRegistrationFormData) => {
-    startTransition(() => {
+    startTransition(async () => {
       try {
-        const createdPatient = registerPatient(data, {
-          facilityCode: "FC01",
-          registeredBy: "Pooja Sharma (Receptionist)",
-        });
+        const backendPatient = await createPatient(toCreatePayload(data));
+        const createdPatient = toPatient(backendPatient);
 
         setRegisteredPatient(createdPatient);
         setShowSuccessDialog(true);
@@ -186,11 +210,53 @@ export default function PatientRegistrationPage() {
           title: "Registration Complete",
           description: `Patient ${createdPatient.fullName} assigned UID: ${createdPatient.uid}`,
         });
+
+        // Fire-and-forget photo upload - don't block the success dialog on it.
+        if (data.photoUrl) {
+          fetch(data.photoUrl)
+            .then((res) => res.blob())
+            .then((blob) => uploadPatientPhoto(createdPatient.id, blob))
+            .catch((err) => {
+              console.error("Photo upload failed:", err);
+              toast({
+                title: "Photo Upload Failed",
+                description: "The patient record was saved, but the photo could not be uploaded. You can retry from the patient profile.",
+                variant: "destructive",
+              });
+            });
+        }
       } catch (err) {
+        const apiErr = err as ApiError;
+        if (apiErr?.status_code === 409) {
+          // Backend detected a duplicate on create but doesn't return the
+          // matches in the 409 body - fetch them separately to show in the
+          // DuplicateAlert.
+          try {
+            const matches = await apiCheckDuplicates(
+              toDuplicateCheckPayload({
+                mobile: data.mobile,
+                identityNumber: data.identityNumber,
+                firstName: data.firstName,
+                lastName: data.lastName,
+                dob: data.dob,
+              })
+            );
+            setDuplicates(matches.map(toPatient));
+          } catch (dupErr) {
+            console.warn("Failed to fetch duplicates after 409", dupErr);
+          }
+          toast({
+            title: "Possible Duplicate Patient",
+            description: "A matching patient record already exists. Review the duplicates below before proceeding.",
+            variant: "destructive",
+          });
+          return;
+        }
+
         console.error("Registration error:", err);
         toast({
           title: "Registration Failed",
-          description: "An error occurred while saving patient record. Please try again.",
+          description: apiErr?.message || "An error occurred while saving patient record. Please try again.",
           variant: "destructive",
         });
       }
@@ -203,6 +269,37 @@ export default function PatientRegistrationPage() {
     setDuplicates([]);
     reset();
   };
+
+  if (!hasPermission("patients.manage")) {
+    return (
+      <AppShell>
+        <div className="max-w-3xl mx-auto pb-12">
+          <Card className="border-dashed border-slate-300 shadow-none bg-slate-50/50">
+            <CardContent className="p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center mx-auto">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-800">Access Restricted</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  You don&apos;t have permission to register patients. Contact your facility administrator if you
+                  believe this is a mistake.
+                </p>
+              </div>
+              <div className="pt-2">
+                <Link href="/patients">
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Back to Patient Directory
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

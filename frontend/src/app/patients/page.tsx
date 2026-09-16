@@ -44,18 +44,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 
 import {
   Patient,
-  PatientSearchParams,
   GENDERS,
   BLOOD_GROUPS,
-  Gender,
-  BloodGroup,
 } from "@/types/patient";
-import { getPatients, searchPatients } from "@/lib/patient-store";
+import { listPatients, fromBackendListItem } from "@/lib/patient-api";
+import { useAuthContext } from "@/providers/auth-provider";
 
 export default function PatientsDirectoryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialUidQuery = searchParams.get("uid") || "";
+  const { hasPermission } = useAuthContext();
+  const canManagePatients = hasPermission("patients.manage");
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [searchQuery, setSearchQuery] = useState(initialUidQuery);
@@ -64,33 +64,52 @@ export default function PatientsDirectoryPage() {
   const [selectedCategory, setSelectedCategory] = useState<"ALL" | "MINORS" | "ADULTS" | "ABHA_VERIFIED">("ALL");
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Detail Modal state
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [copiedUid, setCopiedUid] = useState<string | null>(null);
 
-  // Load patients from store. Reads from localStorage (SSR-safe only via a
-  // client-side effect, not a lazy useState initializer).
+  // Load patients from the backend search endpoint. Debounced on the
+  // search query so we don't fire a request on every keystroke.
   /* eslint-disable react-hooks/set-state-in-effect */
-  const refreshPatients = () => {
-    const list = getPatients();
-    setPatients(list);
-  };
-
   useEffect(() => {
-    refreshPatients();
-  }, []);
+    let cancelled = false;
+    setIsLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const items = await listPatients({ name: searchQuery || undefined });
+        if (!cancelled) {
+          setPatients(items.map(fromBackendListItem));
+        }
+      } catch (err) {
+        console.error("Failed to load patients", err);
+        if (!cancelled) setPatients([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Filtered & Searched patients
+  // Client-side refinement for filters the list endpoint doesn't support
+  // (gender / blood group / minor / ABHA) - the search query itself is
+  // already applied server-side above.
   const filteredPatients = useMemo(() => {
-    let result = searchPatients({
-      query: searchQuery,
-      gender: selectedGender !== "ALL" ? (selectedGender as Gender) : undefined,
-      bloodGroup: selectedBloodGroup !== "ALL" ? (selectedBloodGroup as BloodGroup) : undefined,
-    });
+    let result = patients;
 
+    if (selectedGender !== "ALL") {
+      result = result.filter((p) => p.gender === selectedGender);
+    }
+    if (selectedBloodGroup !== "ALL") {
+      result = result.filter((p) => p.bloodGroup === selectedBloodGroup);
+    }
     if (selectedCategory === "MINORS") {
       result = result.filter((p) => p.isMinor);
     } else if (selectedCategory === "ADULTS") {
@@ -100,7 +119,7 @@ export default function PatientsDirectoryPage() {
     }
 
     return result;
-  }, [patients, searchQuery, selectedGender, selectedBloodGroup, selectedCategory]);
+  }, [patients, selectedGender, selectedBloodGroup, selectedCategory]);
 
   const handleCopyUid = (uid: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -137,12 +156,24 @@ export default function PatientsDirectoryPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <Link href="/patients/new">
-              <Button size="sm" className="gap-1.5 bg-primary text-white shadow-xs hover:bg-primary/90 text-xs">
+            {canManagePatients ? (
+              <Link href="/patients/new">
+                <Button size="sm" className="gap-1.5 bg-primary text-white shadow-xs hover:bg-primary/90 text-xs">
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Register New Patient
+                </Button>
+              </Link>
+            ) : (
+              <Button
+                size="sm"
+                disabled
+                title="You don't have permission to register patients"
+                className="gap-1.5 text-xs"
+              >
                 <UserPlus className="w-3.5 h-3.5" />
                 Register New Patient
               </Button>
-            </Link>
+            )}
           </div>
         </div>
 
@@ -314,7 +345,13 @@ export default function PatientsDirectoryPage() {
         {/* Results Counter Bar */}
         <div className="flex items-center justify-between text-xs text-slate-500 px-1">
           <span>
-            Showing <strong>{filteredPatients.length}</strong> of <strong>{patients.length}</strong> registered patients
+            {isLoading ? (
+              "Loading patients..."
+            ) : (
+              <>
+                Showing <strong>{filteredPatients.length}</strong> of <strong>{patients.length}</strong> registered patients
+              </>
+            )}
           </span>
           {searchQuery && (
             <span>
@@ -336,14 +373,16 @@ export default function PatientsDirectoryPage() {
                   No registered patient matches your search criteria. You can create a new registration or try adjusting your search terms.
                 </p>
               </div>
-              <div className="pt-2">
-                <Link href="/patients/new">
-                  <Button size="sm" className="gap-1.5 bg-primary text-white text-xs">
-                    <UserPlus className="w-3.5 h-3.5" />
-                    Register New Patient
-                  </Button>
-                </Link>
-              </div>
+              {canManagePatients && (
+                <div className="pt-2">
+                  <Link href="/patients/new">
+                    <Button size="sm" className="gap-1.5 bg-primary text-white text-xs">
+                      <UserPlus className="w-3.5 h-3.5" />
+                      Register New Patient
+                    </Button>
+                  </Link>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : viewMode === "table" ? (
