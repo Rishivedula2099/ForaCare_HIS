@@ -5,17 +5,24 @@ from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.core.permissions import ensure_same_tenant
+from app.core.permissions import ensure_same_facility, ensure_same_tenant
 from app.modules.audit import service as audit_service
 from app.modules.auth.models import User
 from app.modules.facilities.models import Facility
+from app.modules.files import service as files_service
 from app.modules.patients.models import (
     Patient,
     PatientAddress,
     PatientContact,
     PatientIdentifier,
+    PatientPhoto,
 )
-from app.modules.patients.schemas import PatientCreateRequest, PatientListItem, PatientOut
+from app.modules.patients.schemas import (
+    PatientCreateRequest,
+    PatientListItem,
+    PatientOut,
+    PatientUpdateRequest,
+)
 
 MINOR_AGE_YEARS = 18
 
@@ -93,13 +100,40 @@ async def find_duplicate_patients(
     return [PatientOut.model_validate(patient) for patient in matches.values()]
 
 
-async def list_patients(db: AsyncSession, current_user: User) -> list[PatientListItem]:
-    result = await db.execute(
-        select(Patient)
-        .where(Patient.tenant_id == current_user.tenant_id)
-        .order_by(Patient.created_at.desc())
+async def list_patients(
+    db: AsyncSession,
+    current_user: User,
+    *,
+    uid: str | None = None,
+    mrn: str | None = None,
+    name: str | None = None,
+    mobile: str | None = None,
+) -> list[PatientListItem]:
+    stmt = select(Patient).where(
+        Patient.tenant_id == current_user.tenant_id,
+        Patient.facility_id == current_user.facility_id,
     )
-    return [PatientListItem.model_validate(patient) for patient in result.scalars().all()]
+
+    if uid:
+        stmt = stmt.where(Patient.uid.ilike(f"%{uid}%"))
+    if mrn:
+        stmt = stmt.where(Patient.mrn.ilike(f"%{mrn}%"))
+    if name:
+        pattern = f"%{name}%"
+        stmt = stmt.where(
+            (Patient.first_name.ilike(pattern))
+            | (Patient.last_name.ilike(pattern))
+            | (func.concat(Patient.first_name, " ", Patient.last_name).ilike(pattern))
+        )
+    if mobile:
+        stmt = stmt.join(PatientContact, PatientContact.patient_id == Patient.id).where(
+            PatientContact.value.ilike(f"%{mobile}%")
+        )
+
+    stmt = stmt.order_by(Patient.created_at.desc())
+
+    result = await db.execute(stmt)
+    return [PatientListItem.model_validate(patient) for patient in result.scalars().unique().all()]
 
 
 async def _get_patient_or_404(db: AsyncSession, patient_id: uuid.UUID) -> Patient:
@@ -180,6 +214,13 @@ async def create_patient(
     patient.identifiers = [
         PatientIdentifier(**identifier.model_dump()) for identifier in payload.identifiers
     ]
+    # A brand-new patient has no photos/identity links yet. Assigning empty
+    # collections here (rather than leaving them unset) avoids the ORM
+    # triggering a lazy fetch on first access below, which fails under the
+    # async engine (MissingGreenlet) since this object was never loaded via
+    # a SELECT that would have eager-loaded them.
+    patient.photos = []
+    patient.identity_links = []
 
     db.add(patient)
     await db.flush()
@@ -190,6 +231,124 @@ async def create_patient(
         resource_type="patient",
         resource_id=patient.id,
         after=PatientOut.model_validate(patient).model_dump(mode="json"),
+        commit=False,
+    )
+    await db.commit()
+    await db.refresh(patient)
+
+    return PatientOut.model_validate(patient)
+
+
+async def upload_patient_photo(
+    db: AsyncSession,
+    patient_id: uuid.UUID,
+    current_user: User,
+    *,
+    content_type: str | None,
+    raw_bytes: bytes,
+) -> PatientPhoto:
+    patient = await _get_patient_or_404(db, patient_id)
+    ensure_same_tenant(patient.tenant_id, current_user)
+    ensure_same_facility(patient.facility_id, current_user)
+
+    storage_path, resolved_content_type = files_service.validate_and_store_photo(
+        tenant_id=patient.tenant_id,
+        facility_id=patient.facility_id,
+        patient_id=patient.id,
+        content_type=content_type,
+        raw_bytes=raw_bytes,
+    )
+
+    for existing in patient.photos:
+        existing.is_primary = False
+
+    photo = PatientPhoto(
+        patient_id=patient.id,
+        storage_path=storage_path,
+        content_type=resolved_content_type,
+        is_primary=True,
+    )
+    db.add(photo)
+    await db.flush()
+
+    await audit_service.record_event(
+        db,
+        action="patients.photo_uploaded",
+        resource_type="patient",
+        resource_id=patient.id,
+        after={"photo_id": str(photo.id), "content_type": resolved_content_type},
+        commit=False,
+    )
+    await db.commit()
+    await db.refresh(photo)
+
+    return photo
+
+
+async def get_patient_photo_file(
+    db: AsyncSession, patient_id: uuid.UUID, photo_id: uuid.UUID, current_user: User
+) -> PatientPhoto:
+    patient = await _get_patient_or_404(db, patient_id)
+    ensure_same_tenant(patient.tenant_id, current_user)
+    ensure_same_facility(patient.facility_id, current_user)
+
+    photo = next((p for p in patient.photos if p.id == photo_id), None)
+    if photo is None:
+        raise NotFoundError("Photo not found.")
+
+    await audit_service.record_event(
+        db,
+        action="patients.photo_accessed",
+        resource_type="patient",
+        resource_id=patient.id,
+        after={"photo_id": str(photo.id)},
+        commit=False,
+    )
+    await db.commit()
+
+    return photo
+
+
+async def update_patient(
+    db: AsyncSession, patient_id: uuid.UUID, payload: PatientUpdateRequest, current_user: User
+) -> PatientOut:
+    patient = await _get_patient_or_404(db, patient_id)
+    ensure_same_tenant(patient.tenant_id, current_user)
+
+    before = PatientOut.model_validate(patient).model_dump(mode="json")
+
+    scalar_fields = payload.model_dump(exclude={"address", "contacts", "identifiers"}, exclude_unset=True)
+    for field, value in scalar_fields.items():
+        setattr(patient, field, value)
+
+    if "dob" in scalar_fields:
+        patient.is_minor = _calculate_age_years(patient.dob) < MINOR_AGE_YEARS
+
+    if payload.address is not None:
+        if patient.address is None:
+            patient.address = PatientAddress(**payload.address.model_dump())
+        else:
+            for field, value in payload.address.model_dump().items():
+                setattr(patient.address, field, value)
+
+    if payload.contacts is not None:
+        patient.contacts = [PatientContact(**contact.model_dump()) for contact in payload.contacts]
+
+    if payload.identifiers is not None:
+        patient.identifiers = [
+            PatientIdentifier(**identifier.model_dump()) for identifier in payload.identifiers
+        ]
+
+    await db.flush()
+    after = PatientOut.model_validate(patient).model_dump(mode="json")
+
+    await audit_service.record_event(
+        db,
+        action="patients.updated",
+        resource_type="patient",
+        resource_id=patient.id,
+        before=before,
+        after=after,
         commit=False,
     )
     await db.commit()

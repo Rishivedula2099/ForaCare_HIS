@@ -141,3 +141,34 @@ class PatientCreateRequest(BaseModel):
     address: PatientAddressIn
     contacts: list[PatientContactIn] = Field(default_factory=list)
     identifiers: list[PatientIdentifierIn] = Field(default_factory=list)
+
+
+class PatientUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=20)
+    first_name: str | None = Field(default=None, min_length=1, max_length=100)
+    middle_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, min_length=1, max_length=100)
+    gender: str | None = Field(default=None, max_length=20)
+    dob: date | None = None
+    blood_group: str | None = Field(default=None, max_length=20)
+    marital_status: str | None = Field(default=None, max_length=20)
+    occupation: str | None = Field(default=None, max_length=100)
+    preferred_language: str | None = Field(default=None, max_length=50)
+
+    guardian_name: str | None = Field(default=None, max_length=255)
+    guardian_relationship: str | None = Field(default=None, max_length=30)
+    guardian_phone: str | None = Field(default=None, max_length=20)
+    guardian_address: str | None = Field(default=None, max_length=500)
+
+    status: str | None = Field(default=None, max_length=20)
+    address: PatientAddressIn | None = None
+    contacts: list[PatientContactIn] | None = None
+    identifiers: list[PatientIdentifierIn] | None = None
+
+
+class DuplicateCheckRequest(BaseModel):
+    mobile: str | None = Field(default=None, max_length=255)
+    id_number: str | None = Field(default=None, max_length=100)
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    dob: date | None = None
