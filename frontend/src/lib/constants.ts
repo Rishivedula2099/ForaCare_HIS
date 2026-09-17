@@ -79,6 +79,18 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
     iconName: "CalendarClock",
   },
   {
+    title: "Departments",
+    href: "/departments",
+    iconName: "Building2",
+    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN, ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST],
+  },
+  {
+    title: "Doctors",
+    href: "/doctors",
+    iconName: "Stethoscope",
+    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN, ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST],
+  },
+  {
     title: "IPD & Beds",
     href: "/ipd",
     iconName: "BedDouble",

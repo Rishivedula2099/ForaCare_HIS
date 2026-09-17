@@ -24,10 +24,16 @@ from app.modules.auth.schemas import (
     VerifyEmailChangeRequest,
     VerifyPhoneChangeRequest,
 )
+from app.modules.doctors.models import Doctor
 from app.modules.facilities.models import Facility
 from app.modules.tenants.models import Tenant
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+async def _find_linked_doctor_id(db: AsyncSession, user: User):
+    result = await db.execute(select(Doctor.id).where(Doctor.user_id == user.id))
+    return result.scalar_one_or_none()
 
 
 async def _load_context(db: AsyncSession, user: User) -> tuple[Tenant, Facility]:
@@ -79,8 +85,9 @@ async def login(
         facility_id=user.facility_id,
     )
 
+    doctor_id = await _find_linked_doctor_id(db, user)
     body = LoginResponse(
-        user=UserOut.from_user(user),
+        user=UserOut.from_user(user, doctor_id=doctor_id),
         tenant=tenant,
         facility=facility,
         session=SessionMeta(expires_in=settings.access_token_expire_minutes * 60),
@@ -177,7 +184,10 @@ async def me(
     current_user: User = Depends(get_current_user),
 ):
     tenant, facility = await _load_context(db, current_user)
-    response = MeResponse(user=UserOut.from_user(current_user), tenant=tenant, facility=facility)
+    doctor_id = await _find_linked_doctor_id(db, current_user)
+    response = MeResponse(
+        user=UserOut.from_user(current_user, doctor_id=doctor_id), tenant=tenant, facility=facility
+    )
     return success_response(
         response.model_dump(mode="json"),
         request_id=getattr(request.state, "request_id", None),

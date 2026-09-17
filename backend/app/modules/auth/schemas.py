@@ -51,11 +51,18 @@ class UserOut(BaseModel):
     is_active: bool
     email_verified: bool
     phone_verified: bool
+    # P3-F07: the `doctors` row this login is clinically tied to, if any
+    # (via `Doctor.user_id`). Lets the frontend proactively tell "you are
+    # not the assigned doctor for this encounter" apart from "you lack the
+    # RBAC permission entirely", instead of only finding out from a 403
+    # after attempting to save - see `_ensure_is_assigned_doctor` in
+    # app/modules/opd/service.py, which this field mirrors client-side.
+    doctor_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_user(cls, user: User) -> "UserOut":
+    def from_user(cls, user: User, *, doctor_id: uuid.UUID | None = None) -> "UserOut":
         return cls(
             id=user.id,
             username=user.username,
@@ -69,6 +76,7 @@ class UserOut(BaseModel):
             is_active=user.is_active,
             email_verified=user.email_verified_at is not None,
             phone_verified=user.phone_verified_at is not None,
+            doctor_id=doctor_id,
         )
 
 

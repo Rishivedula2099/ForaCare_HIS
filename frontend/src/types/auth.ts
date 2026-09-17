@@ -33,6 +33,10 @@ export interface AuthUser {
   is_active: boolean;
   email_verified: boolean;
   phone_verified: boolean;
+  /** The `doctors` row this login is clinically tied to, if any (P3-F07).
+   * Lets OPD UI tell "you're not the assigned doctor" apart from "you lack
+   * the permission entirely" before attempting a save. */
+  doctorId: string | null;
 }
 
 /** Raw `/auth/login` and `/auth/me` user shape - `role` is nested, not flattened. */
@@ -49,6 +53,7 @@ export interface BackendUserPayload {
   is_active: boolean;
   email_verified: boolean;
   phone_verified: boolean;
+  doctor_id?: string | null;
 }
 
 export function adaptBackendUser(raw: BackendUserPayload): AuthUser {
@@ -66,6 +71,7 @@ export function adaptBackendUser(raw: BackendUserPayload): AuthUser {
     is_active: raw.is_active,
     email_verified: raw.email_verified,
     phone_verified: raw.phone_verified,
+    doctorId: raw.doctor_id ?? null,
   };
 }
 

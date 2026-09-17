@@ -15,6 +15,8 @@ import {
   SlidersHorizontal,
   KeyRound,
   Palette,
+  Building2,
+  Stethoscope,
 } from "lucide-react";
 import { MAIN_NAV_ITEMS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -32,6 +34,8 @@ const ICONS_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   ShieldCheck,
   SlidersHorizontal,
   KeyRound,
+  Building2,
+  Stethoscope,
 };
 
 export function Sidebar() {
