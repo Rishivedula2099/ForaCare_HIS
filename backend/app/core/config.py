@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 3
 
+    # P3-B06: HMAC key signing each OPD check-in QR reference, so a code's
+    # authenticity can be checked structurally (mismatched/tampered
+    # signature) before ever touching the database.
+    qr_signing_secret_key: str = "local-dev-only-insecure-qr-secret-change-me"
+
     cookie_domain: str | None = None
     session_cookie_samesite: str = "lax"
 

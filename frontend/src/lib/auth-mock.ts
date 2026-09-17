@@ -106,6 +106,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
   {
@@ -124,6 +125,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
   {
@@ -142,6 +144,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
   {
@@ -160,6 +163,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
   {
@@ -178,6 +182,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
   {
@@ -196,6 +201,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
   {
@@ -214,6 +220,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
   {
@@ -232,6 +239,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
   {
@@ -250,6 +258,7 @@ export const MOCK_STAFF_DIRECTORY: MockStaffMember[] = [
       is_active: true,
       email_verified: true,
       phone_verified: false,
+      doctorId: null,
     },
   },
 ];

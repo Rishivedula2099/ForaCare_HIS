@@ -14,8 +14,12 @@ from app.modules.auth.models import User
 from app.modules.rbac.models import Role
 
 
-async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
-    access_token = request.cookies.get(ACCESS_COOKIE_NAME)
+async def authenticate_by_access_token(access_token: str | None, db: AsyncSession) -> User:
+    """Resolves the access-token cookie value into a `User` with role and
+    permissions eager-loaded. Shared by the HTTP dependency below and by the
+    WebSocket queue endpoint (app/api/v1/opd.py), which can't use a normal
+    FastAPI `Depends(get_current_user)` chain since it reads the cookie off
+    `WebSocket.cookies` rather than `Request.cookies`."""
     if not access_token:
         raise UnauthorizedError("Not authenticated.")
 
@@ -39,6 +43,10 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     set_tenant_context(tenant_id=user.tenant_id, facility_id=user.facility_id, actor_user_id=user.id)
 
     return user
+
+
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
+    return await authenticate_by_access_token(request.cookies.get(ACCESS_COOKIE_NAME), db)
 
 
 def require_roles(*role_codes: str):

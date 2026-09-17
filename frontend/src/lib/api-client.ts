@@ -119,9 +119,20 @@ class ApiClient {
           }
         }
 
-        // Redirect to the shared "access restricted" page on 403 Forbidden
+        // Redirect to the shared "access restricted" page on a 403 from
+        // loading a page's data (GET) - the whole view is inaccessible, so
+        // there's nothing useful to show in place. A 403 from an action the
+        // user took on a page they're otherwise allowed to be on (POST/
+        // PATCH/DELETE/PUT) is a business-rule rejection, not a page-access
+        // failure (e.g. "you're not the doctor assigned to this encounter",
+        // "you don't have opd.manage_queue") - it's meaningful and often
+        // recoverable, so it must reach the caller's own error handling
+        // instead of yanking the user off the page and discarding unsaved
+        // work (P3-F07 "proper 403 handling").
+        const method = (error.config?.method || "get").toLowerCase();
         if (
           error.response?.status === 403 &&
+          method === "get" &&
           typeof window !== "undefined" &&
           !window.location.pathname.startsWith("/forbidden")
         ) {
