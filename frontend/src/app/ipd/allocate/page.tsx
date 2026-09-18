@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   RotateCcw,
   ArrowLeft,
+  FileText,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -26,9 +27,21 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { fromBackendListItem, listPatients } from "@/lib/patient-api";
 import { admitPatient, listBeds, listRooms, listWards } from "@/lib/ipd-api";
+import { listDoctors } from "@/lib/doctor-api";
 import { Patient } from "@/types/patient";
 import { ApiError } from "@/types/api";
-import { ADMISSION_TYPES, AdmissionType, Bed, BED_STATUS_BADGE_CLASS } from "@/types/ipd";
+import {
+  ADMISSION_TYPES,
+  AdmissionType,
+  Bed,
+  BED_STATUS_BADGE_CLASS,
+  PAYMENT_CATEGORIES,
+  PaymentCategory,
+  PAYMENT_MODES,
+  PaymentMode,
+  REFERRAL_SOURCES,
+  ReferralSource,
+} from "@/types/ipd";
 
 function AllocateBedPageContent() {
   const { hasPermission } = useAuth();
@@ -42,9 +55,19 @@ function AllocateBedPageContent() {
   const [roomId, setRoomId] = React.useState("");
   const [selectedBed, setSelectedBed] = React.useState<Bed | null>(null);
   const [admissionType, setAdmissionType] = React.useState<AdmissionType>("ELECTIVE");
+  const [consultantId, setConsultantId] = React.useState("");
+  const [referralSource, setReferralSource] = React.useState<ReferralSource>("SELF");
+  const [referralDetail, setReferralDetail] = React.useState("");
+  const [paymentCategory, setPaymentCategory] = React.useState<PaymentCategory>("CASH");
+  const [depositAmount, setDepositAmount] = React.useState("");
+  const [depositPaymentMode, setDepositPaymentMode] = React.useState<PaymentMode>("CASH");
   const [notes, setNotes] = React.useState("");
   const [formError, setFormError] = React.useState<string | null>(null);
   const [confirmedFor, setConfirmedFor] = React.useState<Patient | null>(null);
+  const [confirmedAdmissionId, setConfirmedAdmissionId] = React.useState<string | null>(null);
+
+  const doctorsQuery = useQuery({ queryKey: ["ipd-allocate-doctors"], queryFn: () => listDoctors() });
+  const activeDoctors = (doctorsQuery.data ?? []).filter((d) => d.isActive);
 
   const patientSearchQuery = useQuery({
     queryKey: ["ipd-allocate-patient-search", patientQuery],
@@ -76,13 +99,20 @@ function AllocateBedPageContent() {
       admitPatient({
         patient_id: selectedPatient!.id,
         bed_id: selectedBed!.id,
+        admitting_doctor_id: consultantId || null,
         admission_type: admissionType,
+        referral_source: referralSource,
+        referral_detail: referralDetail.trim() || null,
+        payment_category: paymentCategory,
         notes: notes.trim() || null,
+        deposit_amount: depositAmount ? Number(depositAmount) : null,
+        deposit_payment_mode: depositPaymentMode,
       }),
-    onSuccess: () => {
+    onSuccess: (admission) => {
       toast({ title: "Bed allocated", description: selectedPatient?.fullName, variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["ipd-beds"] });
       setConfirmedFor(selectedPatient);
+      setConfirmedAdmissionId(admission.id);
     },
     onError: (error: ApiError) => {
       setFormError(error?.message || "Unable to allocate this bed. Please try a different bed.");
@@ -117,11 +147,18 @@ function AllocateBedPageContent() {
 
   const resetForAnother = () => {
     setConfirmedFor(null);
+    setConfirmedAdmissionId(null);
     setSelectedPatient(null);
     setWardId("");
     setRoomId("");
     setSelectedBed(null);
     setAdmissionType("ELECTIVE");
+    setConsultantId("");
+    setReferralSource("SELF");
+    setReferralDetail("");
+    setPaymentCategory("CASH");
+    setDepositAmount("");
+    setDepositPaymentMode("CASH");
     setNotes("");
     setFormError(null);
   };
@@ -170,6 +207,14 @@ function AllocateBedPageContent() {
                 <RotateCcw className="w-3.5 h-3.5" />
                 Allocate Another Bed
               </Button>
+              {confirmedAdmissionId && (
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" asChild>
+                  <Link href={`/ipd/admissions/${confirmedAdmissionId}`}>
+                    <FileText className="w-3.5 h-3.5" />
+                    View Admission
+                  </Link>
+                </Button>
+              )}
               <Button variant="outline" size="sm" className="gap-1.5 text-xs" asChild>
                 <Link href="/ipd">
                   <BedDouble className="w-3.5 h-3.5" />
@@ -322,15 +367,81 @@ function AllocateBedPageContent() {
               />
             </div>
             <div>
-              <label className="text-[11px] font-semibold text-slate-700 block mb-1">Notes (optional)</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={1}
-                placeholder="Any relevant admission notes"
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <label className="text-[11px] font-semibold text-slate-700 block mb-1">Consultant (optional)</label>
+              <Select
+                options={activeDoctors.map((d) => ({ value: d.id, label: `${d.fullName} (${d.specialization})` }))}
+                value={consultantId}
+                onChange={setConsultantId}
+                placeholder="Select a consultant"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-[11px] font-semibold text-slate-700 block mb-1">Referral</label>
+              <Select
+                options={REFERRAL_SOURCES.map((r) => ({ value: r.value, label: r.label }))}
+                value={referralSource}
+                onChange={(value) => setReferralSource(value as ReferralSource)}
+                placeholder="Select referral source"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-slate-700 block mb-1">Referral Detail (optional)</label>
+              <input
+                type="text"
+                value={referralDetail}
+                onChange={(e) => setReferralDetail(e.target.value)}
+                placeholder="Referring doctor / hospital name"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="text-[11px] font-semibold text-slate-700 block mb-1">Payment Category</label>
+              <Select
+                options={PAYMENT_CATEGORIES.map((p) => ({ value: p.value, label: p.label }))}
+                value={paymentCategory}
+                onChange={(value) => setPaymentCategory(value as PaymentCategory)}
+                placeholder="Select payment category"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-slate-700 block mb-1">Deposit Amount (optional)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="0.00"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-slate-700 block mb-1">Deposit Mode</label>
+              <Select
+                options={PAYMENT_MODES.map((m) => ({ value: m.value, label: m.label }))}
+                value={depositPaymentMode}
+                onChange={(value) => setDepositPaymentMode(value as PaymentMode)}
+                placeholder="Select payment mode"
+                disabled={!depositAmount}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-slate-700 block mb-1">Notes (optional)</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={1}
+              placeholder="Any relevant admission notes"
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
           </div>
 
           {/* Step 5: Confirmation */}

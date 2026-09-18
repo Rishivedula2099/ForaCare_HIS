@@ -10,9 +10,11 @@ from app.modules.auth.models import User
 from app.modules.ipd import service
 from app.modules.ipd.schemas import (
     AdmissionCreateRequest,
+    AdmissionUpdateRequest,
     BedCreateRequest,
     BedUpdateRequest,
     ConsentCreateRequest,
+    DepositCreateRequest,
     DischargeCreateRequest,
     RoomCreateRequest,
     RoomUpdateRequest,
@@ -206,6 +208,58 @@ async def get_admission(
     admission = await service.get_admission(db, admission_id, current_user)
     return success_response(
         admission.model_dump(mode="json"), request_id=getattr(request.state, "request_id", None)
+    )
+
+
+@router.patch(
+    "/admissions/{admission_id}", response_model=ApiResponse, summary="Update an active admission"
+)
+async def update_admission(
+    admission_id: uuid.UUID,
+    payload: AdmissionUpdateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permissions("ipd.manage_beds")),
+):
+    admission = await service.update_admission(db, admission_id, payload, current_user)
+    return success_response(
+        admission.model_dump(mode="json"), request_id=getattr(request.state, "request_id", None)
+    )
+
+
+@router.get(
+    "/admissions/{admission_id}/deposits",
+    response_model=ApiResponse,
+    summary="List deposits recorded for an admission",
+)
+async def list_deposits(
+    admission_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permissions("ipd.view")),
+):
+    deposits = await service.list_deposits(db, admission_id, current_user)
+    return success_response(
+        [deposit.model_dump(mode="json") for deposit in deposits],
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+
+@router.post(
+    "/admissions/{admission_id}/deposits",
+    response_model=ApiResponse,
+    summary="Record a deposit for an admission",
+)
+async def create_deposit(
+    admission_id: uuid.UUID,
+    payload: DepositCreateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permissions("ipd.manage_beds")),
+):
+    deposit = await service.create_deposit(db, admission_id, payload, current_user)
+    return success_response(
+        deposit.model_dump(mode="json"), request_id=getattr(request.state, "request_id", None)
     )
 
 

@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   ClipboardPlus,
   Wrench,
+  FileText,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -257,6 +258,7 @@ function OccupiedBedDialog({
   const queryClient = useQueryClient();
 
   const [confirmDischargeOpen, setConfirmDischargeOpen] = React.useState(false);
+  const [confirmTransferOpen, setConfirmTransferOpen] = React.useState(false);
   const [transferBedId, setTransferBedId] = React.useState("");
   const [transferReason, setTransferReason] = React.useState("");
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -266,6 +268,11 @@ function OccupiedBedDialog({
     queryFn: () => listBeds({ status: "AVAILABLE" }),
     enabled: open && canManage,
   });
+  // Excludes this bed defensively - it's already OCCUPIED so the AVAILABLE
+  // filter above rules it out server-side, but a stale cache shouldn't be
+  // able to offer "transfer to the bed the patient is already in".
+  const destinationBeds = (availableBedsQuery.data ?? []).filter((b) => b.id !== bed?.id);
+  const destinationBed = destinationBeds.find((b) => b.id === transferBedId) ?? null;
 
   const dischargeMutation = useMutation({
     mutationFn: () => dischargeAdmission(bed!.currentOccupant!.admissionId, { discharge_type: "NORMAL" }),
@@ -290,14 +297,24 @@ function OccupiedBedDialog({
     onSuccess: () => {
       toast({ title: "Patient transferred", variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["ipd-beds"] });
+      setConfirmTransferOpen(false);
       onOpenChange(false);
     },
-    onError: (error: ApiError) => setActionError(error?.message || "Unable to transfer this patient."),
+    onError: (error: ApiError) => {
+      // The destination bed may have just been taken by someone else (or
+      // put into maintenance) between selecting it and confirming - drop
+      // back to the picker with a fresh bed list rather than letting the
+      // user retry against a bed that's no longer available.
+      setActionError(error?.message || "Unable to transfer this patient. Please choose a different bed.");
+      queryClient.invalidateQueries({ queryKey: ["ipd-beds", "AVAILABLE"] });
+      setConfirmTransferOpen(false);
+      setTransferBedId("");
+    },
   });
 
   if (!bed?.currentOccupant) return null;
   const occupant = bed.currentOccupant;
-  const bedOptions = (availableBedsQuery.data ?? []).map((b) => ({
+  const bedOptions = destinationBeds.map((b) => ({
     value: b.id,
     label: `${b.bedNumber} — ${b.room.roomNumber}, ${b.ward.name}`,
   }));
@@ -335,11 +352,34 @@ function OccupiedBedDialog({
                   <ArrowRightLeft className="w-3.5 h-3.5" />
                   Transfer to another bed
                 </label>
+
+                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 rounded-md p-2.5">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Source Bed</span>
+                    <span className="font-mono font-semibold text-slate-900">
+                      {bed.bedNumber} — {bed.room.roomNumber}, {bed.ward.name}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Destination Bed</span>
+                    <span className="font-mono font-semibold text-slate-900">
+                      {destinationBed ? `${destinationBed.bedNumber} — ${destinationBed.room.roomNumber}, ${destinationBed.ward.name}` : "Not selected"}
+                    </span>
+                  </div>
+                </div>
+
                 <Select
                   options={bedOptions}
                   value={transferBedId}
                   onChange={setTransferBedId}
-                  placeholder={availableBedsQuery.isLoading ? "Loading available beds..." : "Select target bed"}
+                  placeholder={
+                    availableBedsQuery.isLoading
+                      ? "Loading available beds..."
+                      : bedOptions.length === 0
+                        ? "No available beds"
+                        : "Select destination bed"
+                  }
+                  disabled={availableBedsQuery.isLoading || bedOptions.length === 0}
                 />
                 <Input
                   value={transferReason}
@@ -353,9 +393,9 @@ function OccupiedBedDialog({
                   variant="outline"
                   className="gap-1.5 text-xs"
                   disabled={!transferBedId || transferMutation.isPending}
-                  onClick={() => transferMutation.mutate()}
+                  onClick={() => setConfirmTransferOpen(true)}
                 >
-                  {transferMutation.isPending ? "Transferring..." : "Transfer Patient"}
+                  Transfer Patient
                 </Button>
               </div>
             )}
@@ -368,6 +408,12 @@ function OccupiedBedDialog({
           </div>
 
           <DialogFooter>
+            <Button variant="outline" size="sm" className="gap-1.5 mr-auto" asChild>
+              <Link href={`/ipd/admissions/${occupant.admissionId}`}>
+                <FileText className="w-3.5 h-3.5" />
+                View Admission
+              </Link>
+            </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               Close
             </Button>
@@ -396,6 +442,21 @@ function OccupiedBedDialog({
         variant="destructive"
         isLoading={dischargeMutation.isPending}
         onConfirm={() => dischargeMutation.mutate()}
+      />
+
+      <ConfirmDialog
+        open={confirmTransferOpen}
+        onOpenChange={setConfirmTransferOpen}
+        title="Transfer this patient?"
+        description={
+          destinationBed
+            ? `Move ${occupant.patient.fullName} from bed ${bed.bedNumber} (${bed.room.roomNumber}, ${bed.ward.name}) to bed ${destinationBed.bedNumber} (${destinationBed.room.roomNumber}, ${destinationBed.ward.name}).`
+            : ""
+        }
+        confirmLabel="Transfer"
+        variant="warning"
+        isLoading={transferMutation.isPending}
+        onConfirm={() => transferMutation.mutate()}
       />
     </>
   );

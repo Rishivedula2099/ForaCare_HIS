@@ -125,6 +125,52 @@ export type AdmissionType = (typeof ADMISSION_TYPES)[number]["value"];
 
 export type AdmissionStatus = "ADMITTED" | "DISCHARGED" | "CANCELLED";
 
+export const REFERRAL_SOURCES = [
+  { value: "SELF", label: "Self" },
+  { value: "DOCTOR", label: "Referring Doctor" },
+  { value: "HOSPITAL", label: "Referring Hospital" },
+  { value: "CAMP", label: "Health Camp" },
+  { value: "INSURANCE_TPA", label: "Insurance / TPA" },
+  { value: "OTHER", label: "Other" },
+] as const;
+export type ReferralSource = (typeof REFERRAL_SOURCES)[number]["value"];
+
+export const PAYMENT_CATEGORIES = [
+  { value: "CASH", label: "Cash" },
+  { value: "INSURANCE", label: "Insurance" },
+  { value: "CORPORATE", label: "Corporate" },
+  { value: "GOVERNMENT_SCHEME", label: "Government Scheme" },
+] as const;
+export type PaymentCategory = (typeof PAYMENT_CATEGORIES)[number]["value"];
+
+export const PAYMENT_MODES = [
+  { value: "CASH", label: "Cash" },
+  { value: "CARD", label: "Card" },
+  { value: "UPI", label: "UPI" },
+  { value: "BANK_TRANSFER", label: "Bank Transfer" },
+  { value: "CHEQUE", label: "Cheque" },
+] as const;
+export type PaymentMode = (typeof PAYMENT_MODES)[number]["value"];
+
+export interface Deposit {
+  id: string;
+  admissionId: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  notes?: string;
+  recordedAt: string;
+}
+
+export interface BedAssignment {
+  id: string;
+  admissionId: string;
+  bedId: string;
+  status: "ACTIVE" | "RELEASED";
+  assignedAt: string;
+  releasedAt?: string;
+  bed: Bed;
+}
+
 export interface Admission {
   id: string;
   patientId: string;
@@ -133,8 +179,13 @@ export interface Admission {
   admissionNumber: string;
   admissionType: AdmissionType;
   status: AdmissionStatus;
+  referralSource: ReferralSource;
+  referralDetail?: string;
+  paymentCategory: PaymentCategory;
   notes?: string;
   admittedAt: string;
+  bedAssignments: BedAssignment[];
+  deposits: Deposit[];
 }
 
 export const DISCHARGE_TYPES = [
@@ -143,3 +194,34 @@ export const DISCHARGE_TYPES = [
   { value: "TRANSFER_OUT", label: "Transfer Out" },
   { value: "DEATH", label: "Death" },
 ] as const;
+export type DischargeType = (typeof DISCHARGE_TYPES)[number]["value"];
+
+export interface Discharge {
+  id: string;
+  admissionId: string;
+  dischargeType: DischargeType;
+  dischargeCondition?: string;
+  dischargeSummary?: string;
+  followUpInstructions?: string;
+  dischargedAt: string;
+}
+
+export const CONSENT_TYPES = [
+  { value: "GENERAL_ADMISSION", label: "General Admission Consent" },
+  { value: "SURGICAL", label: "Surgical Consent" },
+  { value: "ANESTHESIA", label: "Anesthesia Consent" },
+  { value: "HIGH_RISK", label: "High-Risk Consent" },
+  { value: "BLOOD_TRANSFUSION", label: "Blood Transfusion Consent" },
+] as const;
+export type ConsentType = (typeof CONSENT_TYPES)[number]["value"];
+
+export interface Consent {
+  id: string;
+  admissionId: string;
+  consentType: ConsentType;
+  consentGiven: boolean;
+  givenByName: string;
+  relationshipToPatient?: string;
+  notes?: string;
+  recordedAt: string;
+}

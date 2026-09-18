@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 BedStatus = Literal["AVAILABLE", "RESERVED", "OCCUPIED", "CLEANING", "MAINTENANCE", "BLOCKED"]
+ReferralSource = Literal["SELF", "DOCTOR", "HOSPITAL", "CAMP", "INSURANCE_TPA", "OTHER"]
+PaymentCategory = Literal["CASH", "INSURANCE", "CORPORATE", "GOVERNMENT_SCHEME"]
+PaymentMode = Literal["CASH", "CARD", "UPI", "BANK_TRANSFER", "CHEQUE"]
 
 # ---------------------------------------------------------------------------
 # Ward
@@ -145,6 +148,23 @@ class BedAssignmentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DepositOut(BaseModel):
+    id: uuid.UUID
+    admission_id: uuid.UUID
+    amount: float
+    payment_mode: str
+    notes: str | None = None
+    recorded_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DepositCreateRequest(BaseModel):
+    amount: float = Field(gt=0)
+    payment_mode: PaymentMode = "CASH"
+    notes: str | None = Field(default=None, max_length=500)
+
+
 class AdmissionOut(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
@@ -155,11 +175,15 @@ class AdmissionOut(BaseModel):
     admission_number: str
     admission_type: str
     status: str
+    referral_source: str
+    referral_detail: str | None = None
+    payment_category: str
     notes: str | None = None
     admitted_at: datetime
     created_at: datetime
     updated_at: datetime
     bed_assignments: list[BedAssignmentOut] = []
+    deposits: list[DepositOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -170,6 +194,21 @@ class AdmissionCreateRequest(BaseModel):
     admitting_doctor_id: uuid.UUID | None = None
     department_id: uuid.UUID | None = None
     admission_type: str = Field(default="ELECTIVE", max_length=20)
+    referral_source: ReferralSource = "SELF"
+    referral_detail: str | None = Field(default=None, max_length=255)
+    payment_category: PaymentCategory = "CASH"
+    notes: str | None = Field(default=None, max_length=1000)
+    deposit_amount: float | None = Field(default=None, gt=0)
+    deposit_payment_mode: PaymentMode = "CASH"
+
+
+class AdmissionUpdateRequest(BaseModel):
+    admitting_doctor_id: uuid.UUID | None = None
+    department_id: uuid.UUID | None = None
+    admission_type: str | None = Field(default=None, max_length=20)
+    referral_source: ReferralSource | None = None
+    referral_detail: str | None = Field(default=None, max_length=255)
+    payment_category: PaymentCategory | None = None
     notes: str | None = Field(default=None, max_length=1000)
 
 

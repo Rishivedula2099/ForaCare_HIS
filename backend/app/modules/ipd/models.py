@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -158,6 +158,11 @@ class Admission(Base):
     admission_type: Mapped[str] = mapped_column(String(20), nullable=False, default="ELECTIVE")
     # ADMITTED | DISCHARGED | CANCELLED
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ADMITTED")
+    # SELF | DOCTOR | HOSPITAL | CAMP | INSURANCE_TPA | OTHER
+    referral_source: Mapped[str] = mapped_column(String(20), nullable=False, default="SELF")
+    referral_detail: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # CASH | INSURANCE | CORPORATE | GOVERNMENT_SCHEME
+    payment_category: Mapped[str] = mapped_column(String(20), nullable=False, default="CASH")
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     admitted_at: Mapped[datetime] = mapped_column(
@@ -181,6 +186,7 @@ class Admission(Base):
     bed_assignments: Mapped[list["BedAssignment"]] = relationship(
         lazy="selectin", order_by="BedAssignment.assigned_at"
     )
+    deposits: Mapped[list["Deposit"]] = relationship(lazy="selectin", order_by="Deposit.recorded_at")
 
 
 class BedAssignment(Base):
@@ -300,5 +306,32 @@ class Discharge(Base):
     follow_up_instructions: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     discharged_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Deposit(Base):
+    __tablename__ = "ipd_deposits"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False
+    )
+    facility_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("facilities.id"), nullable=False
+    )
+    admission_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ipd_admissions.id"), nullable=False
+    )
+    received_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    # CASH | CARD | UPI | BANK_TRANSFER | CHEQUE
+    payment_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="CASH")
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
