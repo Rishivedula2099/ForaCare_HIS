@@ -94,6 +94,7 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
     title: "IPD & Beds",
     href: "/ipd",
     iconName: "BedDouble",
+    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN, ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST],
   },
   {
     title: "Billing & Cashier",
