@@ -6,6 +6,7 @@ from app.api.v1.departments import router as departments_router
 from app.api.v1.doctors import router as doctors_router
 from app.api.v1.facilities import router as facilities_router
 from app.api.v1.health import router as health_router
+from app.api.v1.ipd import router as ipd_router
 from app.api.v1.opd import router as opd_router
 from app.api.v1.patients import router as patients_router
 from app.api.v1.rbac import router as rbac_router
@@ -22,3 +23,4 @@ api_v1_router.include_router(patients_router)
 api_v1_router.include_router(departments_router)
 api_v1_router.include_router(doctors_router)
 api_v1_router.include_router(opd_router)
+api_v1_router.include_router(ipd_router)
