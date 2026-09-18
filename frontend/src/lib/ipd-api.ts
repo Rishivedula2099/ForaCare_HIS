@@ -10,9 +10,18 @@ import {
   AdmissionStatus,
   AdmissionType,
   Bed,
+  BedAssignment,
   BedFormData,
   BedOccupant,
   BedStatus,
+  Consent,
+  ConsentType,
+  Deposit,
+  Discharge,
+  DischargeType,
+  PaymentCategory,
+  PaymentMode,
+  ReferralSource,
   Room,
   RoomFormData,
   RoomType,
@@ -80,6 +89,25 @@ export interface BackendBedOut {
   current_occupant: BackendCurrentOccupant | null;
 }
 
+export interface BackendDepositOut {
+  id: string;
+  admission_id: string;
+  amount: number;
+  payment_mode: string;
+  notes: string | null;
+  recorded_at: string;
+}
+
+export interface BackendBedAssignmentOut {
+  id: string;
+  admission_id: string;
+  bed_id: string;
+  status: string;
+  assigned_at: string;
+  released_at: string | null;
+  bed: BackendBedOut;
+}
+
 export interface BackendAdmissionOut {
   id: string;
   patient_id: string;
@@ -88,8 +116,34 @@ export interface BackendAdmissionOut {
   admission_number: string;
   admission_type: string;
   status: string;
+  referral_source: string;
+  referral_detail: string | null;
+  payment_category: string;
   notes: string | null;
   admitted_at: string;
+  bed_assignments: BackendBedAssignmentOut[];
+  deposits: BackendDepositOut[];
+}
+
+export interface BackendConsentOut {
+  id: string;
+  admission_id: string;
+  consent_type: string;
+  consent_given: boolean;
+  given_by_name: string;
+  relationship_to_patient: string | null;
+  notes: string | null;
+  recorded_at: string;
+}
+
+export interface BackendDischargeOut {
+  id: string;
+  admission_id: string;
+  discharge_type: string;
+  discharge_condition: string | null;
+  discharge_summary: string | null;
+  follow_up_instructions: string | null;
+  discharged_at: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +210,29 @@ export function fromBackendBed(bed: BackendBedOut): Bed {
   };
 }
 
+export function fromBackendDeposit(deposit: BackendDepositOut): Deposit {
+  return {
+    id: deposit.id,
+    admissionId: deposit.admission_id,
+    amount: deposit.amount,
+    paymentMode: deposit.payment_mode as PaymentMode,
+    notes: deposit.notes ?? undefined,
+    recordedAt: deposit.recorded_at,
+  };
+}
+
+export function fromBackendBedAssignment(assignment: BackendBedAssignmentOut): BedAssignment {
+  return {
+    id: assignment.id,
+    admissionId: assignment.admission_id,
+    bedId: assignment.bed_id,
+    status: assignment.status as "ACTIVE" | "RELEASED",
+    assignedAt: assignment.assigned_at,
+    releasedAt: assignment.released_at ?? undefined,
+    bed: fromBackendBed(assignment.bed),
+  };
+}
+
 export function fromBackendAdmission(admission: BackendAdmissionOut): Admission {
   return {
     id: admission.id,
@@ -165,8 +242,38 @@ export function fromBackendAdmission(admission: BackendAdmissionOut): Admission 
     admissionNumber: admission.admission_number,
     admissionType: admission.admission_type as AdmissionType,
     status: admission.status as AdmissionStatus,
+    referralSource: admission.referral_source as ReferralSource,
+    referralDetail: admission.referral_detail ?? undefined,
+    paymentCategory: admission.payment_category as PaymentCategory,
     notes: admission.notes ?? undefined,
     admittedAt: admission.admitted_at,
+    bedAssignments: (admission.bed_assignments ?? []).map(fromBackendBedAssignment),
+    deposits: (admission.deposits ?? []).map(fromBackendDeposit),
+  };
+}
+
+export function fromBackendConsent(consent: BackendConsentOut): Consent {
+  return {
+    id: consent.id,
+    admissionId: consent.admission_id,
+    consentType: consent.consent_type as ConsentType,
+    consentGiven: consent.consent_given,
+    givenByName: consent.given_by_name,
+    relationshipToPatient: consent.relationship_to_patient ?? undefined,
+    notes: consent.notes ?? undefined,
+    recordedAt: consent.recorded_at,
+  };
+}
+
+export function fromBackendDischarge(discharge: BackendDischargeOut): Discharge {
+  return {
+    id: discharge.id,
+    admissionId: discharge.admission_id,
+    dischargeType: discharge.discharge_type as DischargeType,
+    dischargeCondition: discharge.discharge_condition ?? undefined,
+    dischargeSummary: discharge.discharge_summary ?? undefined,
+    followUpInstructions: discharge.follow_up_instructions ?? undefined,
+    dischargedAt: discharge.discharged_at,
   };
 }
 
@@ -280,14 +387,60 @@ export async function updateBedStatus(id: string, status: BedStatus): Promise<Be
 export interface AdmitPatientPayload {
   patient_id: string;
   bed_id: string;
+  admitting_doctor_id?: string | null;
+  department_id?: string | null;
   admission_type: AdmissionType;
+  referral_source?: ReferralSource;
+  referral_detail?: string | null;
+  payment_category?: PaymentCategory;
   notes?: string | null;
+  deposit_amount?: number | null;
+  deposit_payment_mode?: PaymentMode;
 }
 
 export async function admitPatient(payload: AdmitPatientPayload): Promise<Admission> {
   const response = await apiClient.post<BackendAdmissionOut>("/ipd/admissions", payload);
   if (!response.data) throw new Error("Failed to admit patient");
   return fromBackendAdmission(response.data);
+}
+
+export async function getAdmission(id: string): Promise<Admission> {
+  const response = await apiClient.get<BackendAdmissionOut>(`/ipd/admissions/${id}`);
+  if (!response.data) throw new Error("Admission not found");
+  return fromBackendAdmission(response.data);
+}
+
+export interface AdmissionUpdatePayload {
+  admitting_doctor_id?: string | null;
+  department_id?: string | null;
+  admission_type?: AdmissionType;
+  referral_source?: ReferralSource;
+  referral_detail?: string | null;
+  payment_category?: PaymentCategory;
+  notes?: string | null;
+}
+
+export async function updateAdmission(id: string, payload: AdmissionUpdatePayload): Promise<Admission> {
+  const response = await apiClient.patch<BackendAdmissionOut>(`/ipd/admissions/${id}`, payload);
+  if (!response.data) throw new Error("Failed to update admission");
+  return fromBackendAdmission(response.data);
+}
+
+export async function listDeposits(admissionId: string): Promise<Deposit[]> {
+  const response = await apiClient.get<BackendDepositOut[]>(`/ipd/admissions/${admissionId}/deposits`);
+  return (response.data ?? []).map(fromBackendDeposit);
+}
+
+export interface RecordDepositPayload {
+  amount: number;
+  payment_mode?: PaymentMode;
+  notes?: string | null;
+}
+
+export async function recordDeposit(admissionId: string, payload: RecordDepositPayload): Promise<Deposit> {
+  const response = await apiClient.post<BackendDepositOut>(`/ipd/admissions/${admissionId}/deposits`, payload);
+  if (!response.data) throw new Error("Failed to record deposit");
+  return fromBackendDeposit(response.data);
 }
 
 export async function transferAdmission(
@@ -298,12 +451,37 @@ export async function transferAdmission(
 }
 
 export interface DischargePayload {
-  discharge_type: string;
+  discharge_type: DischargeType;
   discharge_condition?: string | null;
   discharge_summary?: string | null;
   follow_up_instructions?: string | null;
 }
 
-export async function dischargeAdmission(admissionId: string, payload: DischargePayload): Promise<void> {
-  await apiClient.post(`/ipd/admissions/${admissionId}/discharge`, payload);
+export async function dischargeAdmission(admissionId: string, payload: DischargePayload): Promise<Discharge> {
+  const response = await apiClient.post<BackendDischargeOut>(`/ipd/admissions/${admissionId}/discharge`, payload);
+  if (!response.data) throw new Error("Failed to discharge patient");
+  return fromBackendDischarge(response.data);
+}
+
+// ---------------------------------------------------------------------------
+// Consent
+// ---------------------------------------------------------------------------
+
+export async function listConsents(admissionId: string): Promise<Consent[]> {
+  const response = await apiClient.get<BackendConsentOut[]>(`/ipd/admissions/${admissionId}/consents`);
+  return (response.data ?? []).map(fromBackendConsent);
+}
+
+export interface RecordConsentPayload {
+  consent_type: ConsentType;
+  consent_given?: boolean;
+  given_by_name: string;
+  relationship_to_patient?: string | null;
+  notes?: string | null;
+}
+
+export async function recordConsent(admissionId: string, payload: RecordConsentPayload): Promise<Consent> {
+  const response = await apiClient.post<BackendConsentOut>(`/ipd/admissions/${admissionId}/consents`, payload);
+  if (!response.data) throw new Error("Failed to record consent");
+  return fromBackendConsent(response.data);
 }

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, ConflictError, NotFoundError
@@ -14,6 +14,7 @@ from app.modules.ipd.models import (
     Bed,
     BedAssignment,
     Consent,
+    Deposit,
     Discharge,
     Room,
     Transfer,
@@ -22,12 +23,15 @@ from app.modules.ipd.models import (
 from app.modules.ipd.schemas import (
     AdmissionCreateRequest,
     AdmissionOut,
+    AdmissionUpdateRequest,
     BedCreateRequest,
     BedOut,
     BedUpdateRequest,
     ConsentCreateRequest,
     ConsentOut,
     CurrentOccupant,
+    DepositCreateRequest,
+    DepositOut,
     DischargeCreateRequest,
     DischargeOut,
     PatientSummary,
@@ -58,6 +62,38 @@ BED_TRANSITIONS: dict[str, set[str]] = {
     "BLOCKED": {"AVAILABLE", "MAINTENANCE"},
 }
 _ALLOCATABLE_BED_STATUSES = {"AVAILABLE", "RESERVED"}
+
+
+async def _lock_patient_admission_slot(db: AsyncSession, patient_id: uuid.UUID) -> None:
+    """Serializes admission creation for one patient (P4-B03) so two
+    concurrent admit requests can't both pass the "no active admission"
+    check before either commits. A `SELECT ... FOR UPDATE` can't cover this
+    because a patient with no active admission has no existing `Admission`
+    row to lock - mirrors `_lock_doctor_queue` in
+    app/modules/opd/service.py. Always acquired before any bed row lock in
+    the same transaction (see `create_admission`) so lock order stays
+    consistent and can't deadlock against it."""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"ipd-admission:{patient_id}"}
+    )
+
+
+async def _lock_admission_number_sequence(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Serializes admission-number generation for one tenant (P4-B03).
+
+    `_generate_admission_number` counts existing rows and formats the next
+    number - it has no row to `SELECT ... FOR UPDATE` until that row exists,
+    so two concurrent admissions that don't otherwise contend on the same
+    bed or patient (and so aren't serialized by that FOR UPDATE lock / by
+    `_lock_patient_admission_slot`) could compute the same number and fail
+    on `ipd_admissions.admission_number`'s unique constraint. Acquired last
+    in `create_admission`, after the patient and bed locks, so lock order
+    stays consistent across the whole function.
+    """
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": f"ipd-admission-number:{tenant_id}"}
+    )
+
 
 # ---------------------------------------------------------------------------
 # Ward
@@ -305,8 +341,11 @@ async def list_beds(
     return [_serialize_bed(bed, occupants.get(bed.id)) for bed in beds]
 
 
-async def _get_bed_or_404(db: AsyncSession, bed_id: uuid.UUID) -> Bed:
-    result = await db.execute(select(Bed).where(Bed.id == bed_id))
+async def _get_bed_or_404(db: AsyncSession, bed_id: uuid.UUID, *, for_update: bool = False) -> Bed:
+    stmt = select(Bed).where(Bed.id == bed_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     bed = result.scalar_one_or_none()
     if bed is None:
         raise NotFoundError("Bed not found.")
@@ -357,11 +396,12 @@ async def create_bed(db: AsyncSession, payload: BedCreateRequest, current_user: 
 async def update_bed(
     db: AsyncSession, bed_id: uuid.UUID, payload: BedUpdateRequest, current_user: User
 ) -> BedOut:
-    bed = await _get_bed_or_404(db, bed_id)
+    bed = await _get_bed_or_404(db, bed_id, for_update=True)
     ensure_same_tenant(bed.tenant_id, current_user)
     ensure_same_facility(bed.facility_id, current_user)
 
     current_status = bed.status
+    before = {"status": current_status, "is_active": bed.is_active, "bed_number": bed.bed_number}
     if payload.status is not None and payload.status != current_status:
         if payload.status not in BED_TRANSITIONS.get(current_status, set()):
             raise AppError(
@@ -378,6 +418,8 @@ async def update_bed(
         action="ipd.bed_updated",
         resource_type="ipd_bed",
         resource_id=bed.id,
+        before=before,
+        after={"status": bed.status, "is_active": bed.is_active, "bed_number": bed.bed_number},
         commit=False,
     )
     await db.commit()
@@ -419,8 +461,13 @@ async def list_admissions(
     return [AdmissionOut.model_validate(admission) for admission in result.scalars().all()]
 
 
-async def _get_admission_or_404(db: AsyncSession, admission_id: uuid.UUID) -> Admission:
-    result = await db.execute(select(Admission).where(Admission.id == admission_id))
+async def _get_admission_or_404(
+    db: AsyncSession, admission_id: uuid.UUID, *, for_update: bool = False
+) -> Admission:
+    stmt = select(Admission).where(Admission.id == admission_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     admission = result.scalar_one_or_none()
     if admission is None:
         raise NotFoundError("Admission not found.")
@@ -444,12 +491,11 @@ def _active_assignment(admission: Admission) -> BedAssignment | None:
 async def create_admission(
     db: AsyncSession, payload: AdmissionCreateRequest, current_user: User
 ) -> AdmissionOut:
-    bed = await _get_bed_or_404(db, payload.bed_id)
-    ensure_same_tenant(bed.tenant_id, current_user)
-    ensure_same_facility(bed.facility_id, current_user)
-
-    if bed.status not in _ALLOCATABLE_BED_STATUSES:
-        raise ConflictError("This bed is not available for admission.")
+    # Locks acquired in a fixed order (patient, then bed) so this can never
+    # deadlock against itself under concurrent admits - see
+    # `_lock_patient_admission_slot`. Both checks below are re-validated
+    # against the now-locked, freshly-read rows, not the pre-lock reads.
+    await _lock_patient_admission_slot(db, payload.patient_id)
 
     existing_admission = await db.execute(
         select(Admission).where(
@@ -461,6 +507,14 @@ async def create_admission(
     if existing_admission.scalar_one_or_none() is not None:
         raise ConflictError("This patient already has an active admission.")
 
+    bed = await _get_bed_or_404(db, payload.bed_id, for_update=True)
+    ensure_same_tenant(bed.tenant_id, current_user)
+    ensure_same_facility(bed.facility_id, current_user)
+
+    if bed.status not in _ALLOCATABLE_BED_STATUSES:
+        raise ConflictError("This bed is not available for admission.")
+
+    await _lock_admission_number_sequence(db, current_user.tenant_id)
     admission = Admission(
         tenant_id=current_user.tenant_id,
         facility_id=current_user.facility_id,
@@ -468,6 +522,9 @@ async def create_admission(
         admitting_doctor_id=payload.admitting_doctor_id,
         department_id=payload.department_id,
         admission_type=payload.admission_type,
+        referral_source=payload.referral_source,
+        referral_detail=payload.referral_detail,
+        payment_category=payload.payment_category,
         notes=payload.notes,
         admission_number=await _generate_admission_number(db, current_user),
         admitted_by=current_user.id,
@@ -484,6 +541,18 @@ async def create_admission(
     )
     db.add(assignment)
     bed.status = "OCCUPIED"
+
+    if payload.deposit_amount is not None:
+        db.add(
+            Deposit(
+                tenant_id=current_user.tenant_id,
+                facility_id=current_user.facility_id,
+                admission_id=admission.id,
+                received_by=current_user.id,
+                amount=payload.deposit_amount,
+                payment_mode=payload.deposit_payment_mode,
+            )
+        )
     await db.flush()
 
     await audit_service.record_event(
@@ -491,6 +560,47 @@ async def create_admission(
         action="ipd.admission_created",
         resource_type="ipd_admission",
         resource_id=admission.id,
+        # Scalar fields only, not `AdmissionOut.model_validate(admission)` -
+        # `bed_assignments`/`deposits` are `lazy="selectin"` relationships
+        # that were never populated by a query on this just-flushed object
+        # (only committed rows get selectin-loaded), so validating the full
+        # schema here raises MissingGreenlet under the async engine.
+        after={
+            "admission_number": admission.admission_number,
+            "patient_id": str(admission.patient_id),
+            "bed_id": str(bed.id),
+            "admission_type": admission.admission_type,
+            "payment_category": admission.payment_category,
+        },
+        commit=False,
+    )
+    await db.commit()
+    await db.refresh(admission)
+    return AdmissionOut.model_validate(admission)
+
+
+async def update_admission(
+    db: AsyncSession, admission_id: uuid.UUID, payload: AdmissionUpdateRequest, current_user: User
+) -> AdmissionOut:
+    admission = await _get_admission_or_404(db, admission_id, for_update=True)
+    ensure_same_tenant(admission.tenant_id, current_user)
+    ensure_same_facility(admission.facility_id, current_user)
+
+    if admission.status != "ADMITTED":
+        raise ConflictError("Only an active admission can be updated.")
+
+    before = AdmissionOut.model_validate(admission).model_dump(mode="json")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(admission, field, value)
+    await db.flush()
+
+    await audit_service.record_event(
+        db,
+        action="ipd.admission_updated",
+        resource_type="ipd_admission",
+        resource_id=admission.id,
+        before=before,
+        after=AdmissionOut.model_validate(admission).model_dump(mode="json"),
         commit=False,
     )
     await db.commit()
@@ -506,7 +616,10 @@ async def create_admission(
 async def create_transfer(
     db: AsyncSession, admission_id: uuid.UUID, payload: TransferCreateRequest, current_user: User
 ) -> TransferOut:
-    admission = await _get_admission_or_404(db, admission_id)
+    # Locks acquired in a fixed order (admission, then bed(s)) - matches
+    # `update_admission`/`create_discharge`, so none of these can deadlock
+    # against each other under concurrent requests.
+    admission = await _get_admission_or_404(db, admission_id, for_update=True)
     ensure_same_tenant(admission.tenant_id, current_user)
     ensure_same_facility(admission.facility_id, current_user)
 
@@ -517,13 +630,44 @@ async def create_transfer(
     if current_assignment is None:
         raise ConflictError("This admission has no active bed assignment.")
 
-    to_bed = await _get_bed_or_404(db, payload.to_bed_id)
+    from_bed_id = current_assignment.bed_id
+    to_bed_id = payload.to_bed_id
+    if to_bed_id == from_bed_id:
+        raise AppError("The destination bed must be different from the current bed.", code="VALIDATION_ERROR")
+
+    # Both beds are locked in a fixed order by id - not "to then from" -
+    # so this can't deadlock against a concurrent transfer swapping the
+    # same two beds in the opposite direction.
+    locked_beds = {
+        bed_id: await _get_bed_or_404(db, bed_id, for_update=True)
+        for bed_id in sorted({from_bed_id, to_bed_id}, key=str)
+    }
+
+    # Validate source bed: must belong to this tenant/facility and must
+    # actually be the bed the admission is occupying. This should always
+    # hold given the invariants elsewhere in this module, but a transfer is
+    # destructive enough (it releases the source bed) that it's worth
+    # confirming rather than assuming.
+    from_bed = locked_beds[from_bed_id]
+    ensure_same_tenant(from_bed.tenant_id, current_user)
+    ensure_same_facility(from_bed.facility_id, current_user)
+    if from_bed.status != "OCCUPIED":
+        raise ConflictError("The source bed is not currently occupied.")
+
+    # Validate destination bed: must belong to this tenant/facility and be
+    # in an allocatable state.
+    to_bed = locked_beds[to_bed_id]
     ensure_same_tenant(to_bed.tenant_id, current_user)
     ensure_same_facility(to_bed.facility_id, current_user)
     if to_bed.status not in _ALLOCATABLE_BED_STATUSES:
         raise ConflictError("The target bed is not available.")
 
-    from_bed = await _get_bed_or_404(db, current_assignment.bed_id)
+    before = {
+        "from_bed_id": str(from_bed.id),
+        "from_bed_status": from_bed.status,
+        "to_bed_id": str(to_bed.id),
+        "to_bed_status": to_bed.status,
+    }
 
     current_assignment.status = "RELEASED"
     current_assignment.released_at = datetime.now(timezone.utc)
@@ -559,6 +703,8 @@ async def create_transfer(
         action="ipd.transfer_created",
         resource_type="ipd_admission",
         resource_id=admission.id,
+        before=before,
+        after=TransferOut.model_validate(transfer).model_dump(mode="json"),
         commit=False,
     )
     await db.commit()
@@ -574,16 +720,24 @@ async def create_transfer(
 async def create_discharge(
     db: AsyncSession, admission_id: uuid.UUID, payload: DischargeCreateRequest, current_user: User
 ) -> DischargeOut:
-    admission = await _get_admission_or_404(db, admission_id)
+    admission = await _get_admission_or_404(db, admission_id, for_update=True)
     ensure_same_tenant(admission.tenant_id, current_user)
     ensure_same_facility(admission.facility_id, current_user)
 
     if admission.status != "ADMITTED":
         raise ConflictError("This admission is not currently active.")
 
+    # Billing validation is intentionally out of scope here - there is no
+    # invoicing/charges module yet (P4-B06), so there is nothing real to
+    # validate the discharge against. Once one exists, this is where a
+    # "must be billed/cleared before discharge" gate belongs.
+    before = {"admission_status": admission.status}
+
     current_assignment = _active_assignment(admission)
     if current_assignment is not None:
-        bed = await _get_bed_or_404(db, current_assignment.bed_id)
+        bed = await _get_bed_or_404(db, current_assignment.bed_id, for_update=True)
+        before["bed_id"] = str(bed.id)
+        before["bed_status"] = bed.status
         current_assignment.status = "RELEASED"
         current_assignment.released_at = datetime.now(timezone.utc)
         bed.status = "CLEANING"
@@ -605,6 +759,8 @@ async def create_discharge(
         action="ipd.discharge_created",
         resource_type="ipd_admission",
         resource_id=admission.id,
+        before=before,
+        after=DischargeOut.model_validate(discharge).model_dump(mode="json") | {"admission_status": admission.status},
         commit=False,
     )
     await db.commit()
@@ -650,8 +806,58 @@ async def create_consent(
         action="ipd.consent_recorded",
         resource_type="ipd_admission",
         resource_id=admission.id,
+        after=ConsentOut.model_validate(consent).model_dump(mode="json"),
         commit=False,
     )
     await db.commit()
     await db.refresh(consent)
     return ConsentOut.model_validate(consent)
+
+
+# ---------------------------------------------------------------------------
+# Deposit
+# ---------------------------------------------------------------------------
+
+
+async def list_deposits(db: AsyncSession, admission_id: uuid.UUID, current_user: User) -> list[DepositOut]:
+    admission = await _get_admission_or_404(db, admission_id)
+    ensure_same_tenant(admission.tenant_id, current_user)
+    ensure_same_facility(admission.facility_id, current_user)
+
+    result = await db.execute(
+        select(Deposit).where(Deposit.admission_id == admission_id).order_by(Deposit.recorded_at)
+    )
+    return [DepositOut.model_validate(deposit) for deposit in result.scalars().all()]
+
+
+async def create_deposit(
+    db: AsyncSession, admission_id: uuid.UUID, payload: DepositCreateRequest, current_user: User
+) -> DepositOut:
+    admission = await _get_admission_or_404(db, admission_id)
+    ensure_same_tenant(admission.tenant_id, current_user)
+    ensure_same_facility(admission.facility_id, current_user)
+
+    if admission.status != "ADMITTED":
+        raise ConflictError("Deposits can only be recorded for an active admission.")
+
+    deposit = Deposit(
+        tenant_id=current_user.tenant_id,
+        facility_id=current_user.facility_id,
+        admission_id=admission.id,
+        received_by=current_user.id,
+        **payload.model_dump(),
+    )
+    db.add(deposit)
+    await db.flush()
+
+    await audit_service.record_event(
+        db,
+        action="ipd.deposit_recorded",
+        resource_type="ipd_admission",
+        resource_id=admission.id,
+        after=DepositOut.model_validate(deposit).model_dump(mode="json"),
+        commit=False,
+    )
+    await db.commit()
+    await db.refresh(deposit)
+    return DepositOut.model_validate(deposit)
