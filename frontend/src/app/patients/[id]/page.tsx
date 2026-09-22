@@ -32,12 +32,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageLoadingState } from "@/components/states/loading-state";
+import { useAuth } from "@/hooks/use-auth";
 import {
   fromBackendPatient,
   getPatient,
   getPatientPhotoBlobUrl,
   PatientViewModel,
 } from "@/lib/patient-api";
+import { listInvoices } from "@/lib/billing-api";
+import { INVOICE_STATUS_BADGE_CLASS, InvoiceStatus } from "@/types/billing";
 
 function EmptyTabState({
   icon: Icon,
@@ -56,6 +59,100 @@ function EmptyTabState({
         </div>
         <p className="text-sm font-semibold text-slate-700">{title}</p>
         <p className="text-xs text-slate-500 max-w-sm mx-auto">{description}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function currency(amount: number): string {
+  return `₹${amount.toFixed(2)}`;
+}
+
+function PatientBillingTab({ patientId }: { patientId: string }) {
+  const { hasPermission } = useAuth();
+  const canView = hasPermission("billing.view");
+  const canCreate = hasPermission("billing.invoice.create");
+
+  // `enabled: canView` avoids a 403 (which would trip the API client's
+  // generic redirect and yank the user off this whole patient profile
+  // page) for a role that can view the patient but not the billing module.
+  const invoicesQuery = useQuery({
+    queryKey: ["billing-invoices", { patientId }],
+    queryFn: () => listInvoices({ patient_id: patientId }),
+    enabled: canView,
+  });
+  const invoices = invoicesQuery.data ?? [];
+
+  if (!canView) {
+    return (
+      <Card className="border-dashed border-slate-300 shadow-none bg-slate-50/50">
+        <CardContent className="p-10 text-center space-y-2">
+          <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center mx-auto">
+            <Wallet className="w-5 h-5" />
+          </div>
+          <p className="text-sm font-semibold text-slate-700">Billing access restricted</p>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            You don&apos;t have permission to view this patient&apos;s billing records.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (invoicesQuery.isLoading) {
+    return <p className="text-xs text-slate-400 py-8 text-center">Loading billing records...</p>;
+  }
+
+  if (invoices.length === 0) {
+    return (
+      <Card className="border-dashed border-slate-300 shadow-none bg-slate-50/50">
+        <CardContent className="p-10 text-center space-y-3">
+          <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center mx-auto">
+            <Wallet className="w-5 h-5" />
+          </div>
+          <p className="text-sm font-semibold text-slate-700">No billing records</p>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">No invoices have been created for this patient yet.</p>
+          {canCreate && (
+            <Button size="sm" className="text-xs" asChild>
+              <Link href={`/billing/new?patientId=${patientId}`}>Create Invoice</Link>
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="shadow-xs border-slate-200">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-900">Invoices</h3>
+          {canCreate && (
+            <Button size="sm" variant="outline" className="text-xs" asChild>
+              <Link href={`/billing/new?patientId=${patientId}`}>New Invoice</Link>
+            </Button>
+          )}
+        </div>
+        <div className="divide-y divide-slate-100 border border-slate-200 rounded-md">
+          {invoices.map((invoice) => (
+            <Link
+              key={invoice.id}
+              href={`/billing/invoices/${invoice.id}`}
+              className="flex items-center justify-between px-3 py-2.5 hover:bg-slate-50 transition-colors"
+            >
+              <div>
+                <div className="text-xs font-mono font-semibold text-slate-900">{invoice.invoiceNumber}</div>
+                <div className="text-[11px] text-slate-500">{new Date(invoice.invoiceDate).toLocaleDateString()}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-slate-900">{currency(invoice.totalAmount)}</span>
+                <Badge variant="outline" className={INVOICE_STATUS_BADGE_CLASS[invoice.status as InvoiceStatus]}>
+                  {invoice.status.replace("_", " ")}
+                </Badge>
+              </div>
+            </Link>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -337,11 +434,7 @@ export default function PatientProfilePage() {
           </TabsContent>
 
           <TabsContent value="billing">
-            <EmptyTabState
-              icon={Wallet}
-              title="No billing records"
-              description="Invoices and payments will appear here once the Billing module (Phase 3) is live."
-            />
+            <PatientBillingTab patientId={patient.id} />
           </TabsContent>
 
           <TabsContent value="documents">

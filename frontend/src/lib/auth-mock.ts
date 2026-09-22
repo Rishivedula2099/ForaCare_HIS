@@ -8,26 +8,53 @@
 import { ROLES, UserRole } from "@/lib/constants";
 import { AuthSession, AuthUser, Facility, Tenant } from "@/types/auth";
 
+// Mirrors `_FULL_BILLING_ACCESS` in backend/app/modules/rbac/constants.py.
+// `billing.view` is module-level access (can the Billing page be opened at
+// all) and is deliberately separate from the per-action permissions below
+// it - a role can hold `billing.view` without any of the `*.create` ones
+// (module access != full billing authority).
+const _FULL_BILLING_ACCESS = [
+  "billing.view",
+  "billing.manage_services",
+  "billing.invoice.create",
+  "billing.payment.create",
+  "billing.refund.create",
+];
+
 /** Mirrors the backend's ROLE_PERMISSION_SEED (app/modules/rbac/constants.py). */
 const MOCK_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   [ROLES.SUPER_ADMIN]: [
     "patients.view", "patients.manage", "opd.manage_queue", "ipd.manage_beds",
-    "billing.create_invoice", "billing.collect_payment", "lab.accession_sample",
+    ..._FULL_BILLING_ACCESS, "lab.accession_sample",
     "lab.enter_results", "lab.verify_results", "lab.approve_reports", "documents.print",
     "audit.view_logs", "users.manage", "roles.view", "roles.manage", "facilities.manage",
     "tenants.manage", "system.diagnostics",
   ],
   [ROLES.HOSPITAL_ADMIN]: [
     "users.manage", "roles.view", "roles.manage", "facilities.manage", "patients.view",
+    ..._FULL_BILLING_ACCESS,
     "audit.view_logs",
   ],
-  [ROLES.DOCTOR]: ["patients.view", "patients.manage", "opd.manage_queue", "ipd.manage_beds", "documents.print"],
-  [ROLES.NURSE]: ["patients.view", "ipd.manage_beds", "documents.print"],
-  [ROLES.RECEPTIONIST]: ["patients.view", "patients.manage", "opd.manage_queue", "documents.print"],
-  [ROLES.BILLING_CASHIER]: ["billing.create_invoice", "billing.collect_payment", "documents.print"],
-  [ROLES.LAB_TECH]: ["lab.accession_sample", "lab.enter_results", "documents.print"],
-  [ROLES.LAB_APPROVER]: ["lab.verify_results", "lab.approve_reports", "documents.print"],
-  [ROLES.AUDITOR]: ["audit.view_logs"],
+  [ROLES.DOCTOR]: [
+    "patients.view", "patients.manage", "opd.manage_queue", "ipd.manage_beds", "documents.print",
+    ..._FULL_BILLING_ACCESS,
+  ],
+  [ROLES.NURSE]: ["patients.view", "ipd.manage_beds", "documents.print", ..._FULL_BILLING_ACCESS],
+  [ROLES.RECEPTIONIST]: [
+    "patients.view", "patients.manage", "opd.manage_queue", "documents.print", ..._FULL_BILLING_ACCESS,
+  ],
+  // Refund authority is deliberately withheld here, matching the backend
+  // seed (S5-B01) - a cashier can view the module, create invoices, and
+  // collect payments/deposits, but not reverse them without an admin
+  // granting `billing.refund.create` explicitly.
+  [ROLES.BILLING_CASHIER]: [
+    "billing.view", "billing.invoice.create", "billing.payment.create", "documents.print",
+  ],
+  [ROLES.LAB_TECH]: ["lab.accession_sample", "lab.enter_results", "documents.print", ..._FULL_BILLING_ACCESS],
+  [ROLES.LAB_APPROVER]: [
+    "lab.verify_results", "lab.approve_reports", "documents.print", ..._FULL_BILLING_ACCESS,
+  ],
+  [ROLES.AUDITOR]: ["audit.view_logs", ..._FULL_BILLING_ACCESS],
 };
 
 export const MOCK_TENANT: Tenant = {

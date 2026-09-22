@@ -13,6 +13,7 @@ from app.core.database import Base
 # registered on `Base.metadata` before autogenerate compares against it.
 from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.billing import models as billing_models  # noqa: F401
 from app.modules.departments import models as departments_models  # noqa: F401
 from app.modules.doctors import models as doctors_models  # noqa: F401
 from app.modules.facilities import models as facilities_models  # noqa: F401
