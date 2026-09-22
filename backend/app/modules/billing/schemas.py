@@ -3,7 +3,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
-PAYMENT_MODES = ("CASH", "CARD", "UPI", "BANK_TRANSFER", "CHEQUE", "INSURANCE")
+# P5-F04: the fixed set of payment modes the cashier UI offers. CORPORATE
+# and INSURANCE settle against a billed-back party rather than at the
+# counter; FREE records a zero-collection waiver (staff concession, charity
+# case, etc); OTHER is an escape hatch for anything not covered above -
+# see `notes`/`reference_number` for the specifics.
+PAYMENT_MODES = ("CASH", "CARD", "UPI", "INSURANCE", "CORPORATE", "FREE", "OTHER")
 SERVICE_CATEGORIES = ("CONSULTATION", "PROCEDURE", "DIAGNOSTIC", "ROOM_CHARGE", "PHARMACY", "OTHER")
 
 
@@ -166,6 +171,21 @@ class InvoiceCreateRequest(BaseModel):
     items: list[InvoiceItemCreateRequest] = Field(min_length=1)
 
 
+class InvoiceAddItemsRequest(BaseModel):
+    items: list[InvoiceItemCreateRequest] = Field(min_length=1)
+
+
+class InvoiceBalanceOut(BaseModel):
+    invoice_id: uuid.UUID
+    invoice_number: str
+    status: str
+    total_amount: float
+    amount_paid: float
+    amount_due: float
+
+    model_config = {"from_attributes": True}
+
+
 # ---------------------------------------------------------------------------
 # Payment
 # ---------------------------------------------------------------------------
@@ -243,6 +263,7 @@ class RefundOut(BaseModel):
     amount: float
     reason: str
     refund_mode: str
+    gateway_reference: str | None = None
     notes: str | None = None
     status: str
     recorded_at: datetime

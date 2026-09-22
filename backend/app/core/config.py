@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     file_storage_root: str = "./storage"
     file_upload_max_bytes: int = 5 * 1024 * 1024
 
+    # P5-B04: selects the `PaymentAdapter` implementation
+    # (app/modules/billing/payment_adapter.py). "mock" (the only
+    # implementation today) settles every payment/refund immediately and
+    # locally; a future production gateway integration registers its own
+    # name there without any change to app/modules/billing/service.py.
+    payment_adapter: str = "mock"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

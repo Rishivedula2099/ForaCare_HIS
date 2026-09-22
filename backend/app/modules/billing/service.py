@@ -1,5 +1,8 @@
+import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +12,7 @@ from app.core.permissions import ensure_same_facility, ensure_same_tenant
 from app.modules.audit import service as audit_service
 from app.modules.auth.models import User
 from app.modules.billing.models import (
+    IdempotencyKey,
     Invoice,
     InvoiceItem,
     Package,
@@ -18,10 +22,15 @@ from app.modules.billing.models import (
     Refund,
     Service,
 )
+from app.modules.billing.payment_adapter import get_payment_adapter
+from app.modules.ipd.models import Admission
 from app.modules.billing.schemas import (
     DepositCreateRequest,
     DepositOut,
+    InvoiceAddItemsRequest,
+    InvoiceBalanceOut,
     InvoiceCreateRequest,
+    InvoiceItemCreateRequest,
     InvoiceOut,
     PackageCreateRequest,
     PackageOut,
@@ -44,6 +53,118 @@ async def _get_patient_or_404(db: AsyncSession, patient_id: uuid.UUID) -> Patien
     if patient is None:
         raise NotFoundError("Patient not found.")
     return patient
+
+
+# ---------------------------------------------------------------------------
+# Decimal-safe money arithmetic (P5-B02)
+#
+# Invoice/payment/refund fields are `float` end-to-end (schemas.py, models.py)
+# to match the rest of the app (see `ipd.models.Deposit.amount`), but a chain
+# of float additions/multiplications across several invoice line items can
+# drift by a cent or more. `_money` routes every monetary calculation through
+# `Decimal` - built from `str(value)` rather than `Decimal(value)` so a float
+# like 19.99 doesn't first pick up its imprecise binary representation - and
+# rounds to the currency's 2 decimal places before converting back to float
+# at the point where a result is assigned to a model/schema field.
+# ---------------------------------------------------------------------------
+
+_CENTS = Decimal("0.01")
+
+
+def _D(value: float | int | Decimal) -> Decimal:
+    return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def _money(*values: float | int | Decimal) -> float:
+    """Sums its arguments in `Decimal` and rounds to 2dp. Called with a
+    single value to round/convert just that one amount."""
+    total = sum((_D(value) for value in values), start=Decimal(0))
+    return float(total.quantize(_CENTS, rounding=ROUND_HALF_UP))
+
+
+def _status_for(amount_paid: Decimal, amount_due: Decimal) -> str:
+    if amount_due <= 0:
+        return "PAID"
+    if amount_paid > 0:
+        return "PARTIALLY_PAID"
+    return "FINALIZED"
+
+
+# ---------------------------------------------------------------------------
+# Idempotency (P5-B05)
+#
+# A financial mutation submitted with an `Idempotency-Key` header (wired in
+# app/api/v1/billing.py) is keyed by (tenant, scope, key) in
+# `billing_idempotency_keys`. `_check_idempotency` must be called - under an
+# advisory lock scoped to that same key, so two concurrent retries can't
+# both slip past the "not seen yet" check and double-charge - before any
+# other work in a mutating function; `_save_idempotency` must be called
+# with the final response, in the same transaction as the mutation it
+# guards, right before that transaction commits. Only the success path is
+# cached, so a request that failed validation can be retried with the same
+# key once corrected.
+# ---------------------------------------------------------------------------
+
+
+def _hash_payload(payload: dict) -> str:
+    normalized = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+async def _check_idempotency(
+    db: AsyncSession, current_user: User, *, scope: str, idempotency_key: str | None, payload: dict
+) -> dict | None:
+    """Returns the previously cached response for this (scope, key), or
+    `None` if this is the first time it's been seen (the caller should
+    proceed normally and call `_save_idempotency` when it succeeds)."""
+    if idempotency_key is None:
+        return None
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": f"billing-idem:{current_user.tenant_id}:{scope}:{idempotency_key}"},
+    )
+
+    result = await db.execute(
+        select(IdempotencyKey).where(
+            IdempotencyKey.tenant_id == current_user.tenant_id,
+            IdempotencyKey.scope == scope,
+            IdempotencyKey.idempotency_key == idempotency_key,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing is None:
+        return None
+
+    if existing.request_hash != _hash_payload(payload):
+        raise ConflictError(
+            "This idempotency key was already used for a different request. Use a new key for a new request."
+        )
+    return existing.response_body
+
+
+async def _save_idempotency(
+    db: AsyncSession,
+    current_user: User,
+    *,
+    scope: str,
+    idempotency_key: str | None,
+    payload: dict,
+    response: dict,
+) -> None:
+    if idempotency_key is None:
+        return
+    db.add(
+        IdempotencyKey(
+            tenant_id=current_user.tenant_id,
+            facility_id=current_user.facility_id,
+            scope=scope,
+            idempotency_key=idempotency_key,
+            request_hash=_hash_payload(payload),
+            response_body=response,
+        )
+    )
+    await db.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +229,15 @@ async def _issue_receipt(
     )
     db.add(receipt)
     await db.flush()
+
+    await audit_service.record_event(
+        db,
+        action="billing.receipt_issued",
+        resource_type="billing_receipt",
+        resource_id=receipt.id,
+        after={"receipt_number": receipt.receipt_number, "receipt_type": receipt_type, "amount": str(amount)},
+        commit=False,
+    )
     return receipt
 
 
@@ -348,49 +478,55 @@ async def get_invoice(db: AsyncSession, invoice_id: uuid.UUID, current_user: Use
     return InvoiceOut.model_validate(invoice)
 
 
-async def create_invoice(
-    db: AsyncSession, payload: InvoiceCreateRequest, current_user: User
-) -> InvoiceOut:
-    patient = await _get_patient_or_404(db, payload.patient_id)
-    ensure_same_tenant(patient.tenant_id, current_user)
-    ensure_same_facility(patient.facility_id, current_user)
+async def _resolve_line_item(
+    db: AsyncSession, current_user: User, item_payload: InvoiceItemCreateRequest
+) -> tuple[str, float, Decimal, Decimal, Decimal, Decimal]:
+    """Resolves a SERVICE/PACKAGE/CUSTOM line item payload to its
+    description, unit price, and Decimal-safe (quantity, discount, tax,
+    line_total) figures - shared by `create_invoice` and `add_invoice_items`
+    so a line item is priced identically regardless of when it's added."""
+    unit_price = item_payload.unit_price
+    description = item_payload.description
+    if item_payload.item_type == "SERVICE":
+        service = await _get_service_or_404(db, item_payload.service_id)
+        ensure_same_tenant(service.tenant_id, current_user)
+        ensure_same_facility(service.facility_id, current_user)
+        unit_price = unit_price if unit_price is not None else float(service.price)
+        description = description or service.name
+    elif item_payload.item_type == "PACKAGE":
+        package = await _get_package_or_404(db, item_payload.package_id)
+        ensure_same_tenant(package.tenant_id, current_user)
+        ensure_same_facility(package.facility_id, current_user)
+        unit_price = unit_price if unit_price is not None else float(package.price)
+        description = description or package.name
 
-    invoice = Invoice(
-        tenant_id=current_user.tenant_id,
-        facility_id=current_user.facility_id,
-        patient_id=payload.patient_id,
-        admission_id=payload.admission_id,
-        created_by=current_user.id,
-        notes=payload.notes,
-        invoice_number=await _generate_invoice_number(db, current_user),
-    )
-    db.add(invoice)
-    await db.flush()
+    quantity = _D(item_payload.quantity)
+    discount = _D(item_payload.discount_amount)
+    tax = _D(item_payload.tax_amount)
+    line_gross = quantity * _D(unit_price)
+    line_total = line_gross - discount + tax
+    return description, unit_price, line_gross, discount, tax, line_total
 
-    subtotal = 0.0
-    discount_total = 0.0
-    tax_total = 0.0
-    grand_total = 0.0
 
-    for item_payload in payload.items:
-        unit_price = item_payload.unit_price
-        description = item_payload.description
-        if item_payload.item_type == "SERVICE":
-            service = await _get_service_or_404(db, item_payload.service_id)
-            ensure_same_tenant(service.tenant_id, current_user)
-            ensure_same_facility(service.facility_id, current_user)
-            unit_price = unit_price if unit_price is not None else float(service.price)
-            description = description or service.name
-        elif item_payload.item_type == "PACKAGE":
-            package = await _get_package_or_404(db, item_payload.package_id)
-            ensure_same_tenant(package.tenant_id, current_user)
-            ensure_same_facility(package.facility_id, current_user)
-            unit_price = unit_price if unit_price is not None else float(package.price)
-            description = description or package.name
+async def _append_invoice_items(
+    db: AsyncSession,
+    invoice: Invoice,
+    items: list[InvoiceItemCreateRequest],
+    current_user: User,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """Prices and inserts `InvoiceItem` rows for `items` against `invoice`,
+    returning the (gross, discount, tax, line_total) sums to fold into the
+    invoice's running totals - shared by `create_invoice` (starting from
+    zero) and `add_invoice_items` (added to the existing totals)."""
+    added_gross = Decimal(0)
+    added_discount = Decimal(0)
+    added_tax = Decimal(0)
+    added_total = Decimal(0)
 
-        line_gross = item_payload.quantity * unit_price
-        line_total = line_gross - item_payload.discount_amount + item_payload.tax_amount
-
+    for item_payload in items:
+        description, unit_price, line_gross, discount, tax, line_total = await _resolve_line_item(
+            db, current_user, item_payload
+        )
         db.add(
             InvoiceItem(
                 tenant_id=current_user.tenant_id,
@@ -404,21 +540,64 @@ async def create_invoice(
                 unit_price=unit_price,
                 discount_amount=item_payload.discount_amount,
                 tax_amount=item_payload.tax_amount,
-                total_amount=line_total,
+                total_amount=_money(line_total),
             )
         )
+        added_gross += line_gross
+        added_discount += discount
+        added_tax += tax
+        added_total += line_total
 
-        subtotal += line_gross
-        discount_total += item_payload.discount_amount
-        tax_total += item_payload.tax_amount
-        grand_total += line_total
+    return added_gross, added_discount, added_tax, added_total
 
-    invoice.subtotal = subtotal
-    invoice.discount_amount = discount_total
-    invoice.tax_amount = tax_total
-    invoice.total_amount = grand_total
+
+async def create_invoice(
+    db: AsyncSession,
+    payload: InvoiceCreateRequest,
+    current_user: User,
+    *,
+    idempotency_key: str | None = None,
+) -> InvoiceOut:
+    request_payload = payload.model_dump(mode="json")
+    cached = await _check_idempotency(
+        db, current_user, scope="create_invoice", idempotency_key=idempotency_key, payload=request_payload
+    )
+    if cached is not None:
+        return InvoiceOut.model_validate(cached)
+
+    patient = await _get_patient_or_404(db, payload.patient_id)
+    ensure_same_tenant(patient.tenant_id, current_user)
+    ensure_same_facility(patient.facility_id, current_user)
+
+    if payload.admission_id is not None:
+        admission = await db.get(Admission, payload.admission_id)
+        if admission is None:
+            raise NotFoundError("Admission not found.")
+        ensure_same_tenant(admission.tenant_id, current_user)
+        ensure_same_facility(admission.facility_id, current_user)
+
+    invoice = Invoice(
+        tenant_id=current_user.tenant_id,
+        facility_id=current_user.facility_id,
+        patient_id=payload.patient_id,
+        admission_id=payload.admission_id,
+        created_by=current_user.id,
+        notes=payload.notes,
+        invoice_number=await _generate_invoice_number(db, current_user),
+    )
+    db.add(invoice)
+    await db.flush()
+
+    subtotal, discount_total, tax_total, grand_total = await _append_invoice_items(
+        db, invoice, payload.items, current_user
+    )
+
+    invoice.subtotal = _money(subtotal)
+    invoice.discount_amount = _money(discount_total)
+    invoice.tax_amount = _money(tax_total)
+    invoice.total_amount = _money(grand_total)
     invoice.amount_paid = 0.0
-    invoice.amount_due = grand_total
+    invoice.amount_due = _money(grand_total)
     await db.flush()
 
     await audit_service.record_event(
@@ -429,9 +608,91 @@ async def create_invoice(
         after={"invoice_number": invoice.invoice_number, "total_amount": str(grand_total)},
         commit=False,
     )
+    result = await get_invoice(db, invoice.id, current_user)
+    await _save_idempotency(
+        db,
+        current_user,
+        scope="create_invoice",
+        idempotency_key=idempotency_key,
+        payload=request_payload,
+        response=result.model_dump(mode="json"),
+    )
     await db.commit()
-    await db.refresh(invoice)
-    return await get_invoice(db, invoice.id, current_user)
+    return result
+
+
+async def add_invoice_items(
+    db: AsyncSession,
+    invoice_id: uuid.UUID,
+    payload: InvoiceAddItemsRequest,
+    current_user: User,
+    *,
+    idempotency_key: str | None = None,
+) -> InvoiceOut:
+    request_payload = {"invoice_id": str(invoice_id), **payload.model_dump(mode="json")}
+    cached = await _check_idempotency(
+        db, current_user, scope="add_invoice_items", idempotency_key=idempotency_key, payload=request_payload
+    )
+    if cached is not None:
+        return InvoiceOut.model_validate(cached)
+
+    invoice = await _get_invoice_or_404(db, invoice_id, for_update=True)
+    ensure_same_tenant(invoice.tenant_id, current_user)
+    ensure_same_facility(invoice.facility_id, current_user)
+
+    if invoice.status == "CANCELLED":
+        raise ConflictError("Cannot add items to a cancelled invoice.")
+    if invoice.status == "PAID":
+        raise ConflictError("Cannot add items to a fully paid invoice.")
+
+    added_gross, added_discount, added_tax, added_total = await _append_invoice_items(
+        db, invoice, payload.items, current_user
+    )
+
+    new_amount_due = _D(invoice.amount_due) + added_total
+    invoice.subtotal = _money(_D(invoice.subtotal) + added_gross)
+    invoice.discount_amount = _money(_D(invoice.discount_amount) + added_discount)
+    invoice.tax_amount = _money(_D(invoice.tax_amount) + added_tax)
+    invoice.total_amount = _money(_D(invoice.total_amount) + added_total)
+    invoice.amount_due = _money(new_amount_due)
+    invoice.status = _status_for(_D(invoice.amount_paid), new_amount_due)
+    await db.flush()
+
+    await audit_service.record_event(
+        db,
+        action="billing.invoice_items_added",
+        resource_type="billing_invoice",
+        resource_id=invoice.id,
+        after={"added_total": str(added_total), "new_total_amount": invoice.total_amount},
+        commit=False,
+    )
+    result = await get_invoice(db, invoice.id, current_user)
+    await _save_idempotency(
+        db,
+        current_user,
+        scope="add_invoice_items",
+        idempotency_key=idempotency_key,
+        payload=request_payload,
+        response=result.model_dump(mode="json"),
+    )
+    await db.commit()
+    return result
+
+
+async def get_invoice_balance(
+    db: AsyncSession, invoice_id: uuid.UUID, current_user: User
+) -> InvoiceBalanceOut:
+    invoice = await _get_invoice_or_404(db, invoice_id)
+    ensure_same_tenant(invoice.tenant_id, current_user)
+    ensure_same_facility(invoice.facility_id, current_user)
+    return InvoiceBalanceOut(
+        invoice_id=invoice.id,
+        invoice_number=invoice.invoice_number,
+        status=invoice.status,
+        total_amount=invoice.total_amount,
+        amount_paid=invoice.amount_paid,
+        amount_due=invoice.amount_due,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -440,16 +701,38 @@ async def create_invoice(
 
 
 async def record_payment(
-    db: AsyncSession, invoice_id: uuid.UUID, payload: PaymentCreateRequest, current_user: User
+    db: AsyncSession,
+    invoice_id: uuid.UUID,
+    payload: PaymentCreateRequest,
+    current_user: User,
+    *,
+    idempotency_key: str | None = None,
 ) -> PaymentOut:
+    request_payload = {"invoice_id": str(invoice_id), **payload.model_dump(mode="json")}
+    cached = await _check_idempotency(
+        db, current_user, scope="record_payment", idempotency_key=idempotency_key, payload=request_payload
+    )
+    if cached is not None:
+        return PaymentOut.model_validate(cached)
+
     invoice = await _get_invoice_or_404(db, invoice_id, for_update=True)
     ensure_same_tenant(invoice.tenant_id, current_user)
     ensure_same_facility(invoice.facility_id, current_user)
 
     if invoice.status == "CANCELLED":
         raise ConflictError("Cannot record a payment against a cancelled invoice.")
-    if payload.amount > invoice.amount_due:
+
+    amount = _D(payload.amount)
+    amount_due = _D(invoice.amount_due)
+    if amount > amount_due:
         raise ConflictError("Payment amount exceeds the outstanding balance on this invoice.")
+
+    adapter = get_payment_adapter()
+    adapter_result = await adapter.process_payment(
+        amount=payload.amount, payment_mode=payload.payment_mode, reference_number=payload.reference_number
+    )
+    if not adapter_result.success:
+        raise ConflictError(adapter_result.message or "Payment could not be processed.")
 
     payment = Payment(
         tenant_id=current_user.tenant_id,
@@ -458,14 +741,16 @@ async def record_payment(
         received_by=current_user.id,
         amount=payload.amount,
         payment_mode=payload.payment_mode,
-        reference_number=payload.reference_number,
+        reference_number=adapter_result.transaction_reference,
         notes=payload.notes,
     )
     db.add(payment)
 
-    invoice.amount_paid = float(invoice.amount_paid) + payload.amount
-    invoice.amount_due = float(invoice.amount_due) - payload.amount
-    invoice.status = "PAID" if invoice.amount_due <= 0 else "PARTIALLY_PAID"
+    new_amount_paid = _D(invoice.amount_paid) + amount
+    new_amount_due = amount_due - amount
+    invoice.amount_paid = _money(new_amount_paid)
+    invoice.amount_due = _money(new_amount_due)
+    invoice.status = _status_for(new_amount_paid, new_amount_due)
     await db.flush()
 
     await _issue_receipt(
@@ -485,9 +770,17 @@ async def record_payment(
         after={"invoice_id": str(invoice.id), "amount": str(payload.amount)},
         commit=False,
     )
+    payment_out = PaymentOut.model_validate(payment)
+    await _save_idempotency(
+        db,
+        current_user,
+        scope="record_payment",
+        idempotency_key=idempotency_key,
+        payload=request_payload,
+        response=payment_out.model_dump(mode="json"),
+    )
     await db.commit()
-    await db.refresh(payment)
-    return PaymentOut.model_validate(payment)
+    return payment_out
 
 
 async def list_payments(db: AsyncSession, invoice_id: uuid.UUID, current_user: User) -> list[PaymentOut]:
@@ -528,11 +821,29 @@ async def _get_deposit_or_404(
 
 
 async def record_deposit(
-    db: AsyncSession, payload: DepositCreateRequest, current_user: User
+    db: AsyncSession,
+    payload: DepositCreateRequest,
+    current_user: User,
+    *,
+    idempotency_key: str | None = None,
 ) -> DepositOut:
+    request_payload = payload.model_dump(mode="json")
+    cached = await _check_idempotency(
+        db, current_user, scope="record_deposit", idempotency_key=idempotency_key, payload=request_payload
+    )
+    if cached is not None:
+        return DepositOut.model_validate(cached)
+
     patient = await _get_patient_or_404(db, payload.patient_id)
     ensure_same_tenant(patient.tenant_id, current_user)
     ensure_same_facility(patient.facility_id, current_user)
+
+    adapter = get_payment_adapter()
+    adapter_result = await adapter.process_payment(
+        amount=payload.amount, payment_mode=payload.payment_mode, reference_number=payload.reference_number
+    )
+    if not adapter_result.success:
+        raise ConflictError(adapter_result.message or "Deposit could not be processed.")
 
     deposit = PatientDeposit(
         tenant_id=current_user.tenant_id,
@@ -542,7 +853,7 @@ async def record_deposit(
         received_by=current_user.id,
         amount=payload.amount,
         payment_mode=payload.payment_mode,
-        reference_number=payload.reference_number,
+        reference_number=adapter_result.transaction_reference,
         notes=payload.notes,
     )
     db.add(deposit)
@@ -565,9 +876,17 @@ async def record_deposit(
         after={"patient_id": str(deposit.patient_id), "amount": str(payload.amount)},
         commit=False,
     )
+    deposit_out = DepositOut.model_validate(deposit)
+    await _save_idempotency(
+        db,
+        current_user,
+        scope="record_deposit",
+        idempotency_key=idempotency_key,
+        payload=request_payload,
+        response=deposit_out.model_dump(mode="json"),
+    )
     await db.commit()
-    await db.refresh(deposit)
-    return DepositOut.model_validate(deposit)
+    return deposit_out
 
 
 # ---------------------------------------------------------------------------
@@ -576,9 +895,21 @@ async def record_deposit(
 
 
 async def create_refund(
-    db: AsyncSession, payload: RefundCreateRequest, current_user: User
+    db: AsyncSession,
+    payload: RefundCreateRequest,
+    current_user: User,
+    *,
+    idempotency_key: str | None = None,
 ) -> RefundOut:
+    request_payload = payload.model_dump(mode="json")
+    cached = await _check_idempotency(
+        db, current_user, scope="create_refund", idempotency_key=idempotency_key, payload=request_payload
+    )
+    if cached is not None:
+        return RefundOut.model_validate(cached)
+
     patient_id: uuid.UUID
+    original_reference: str | None
 
     if payload.payment_id is not None:
         payment = await db.get(Payment, payload.payment_id)
@@ -588,13 +919,17 @@ async def create_refund(
         ensure_same_facility(payment.facility_id, current_user)
         if payment.status == "REFUNDED":
             raise ConflictError("This payment has already been refunded.")
-        if payload.amount > payment.amount:
+        refund_amount = _D(payload.amount)
+        if refund_amount > _D(payment.amount):
             raise ConflictError("Refund amount exceeds the original payment amount.")
+        original_reference = payment.reference_number
 
         invoice = await _get_invoice_or_404(db, payment.invoice_id, for_update=True)
-        invoice.amount_paid = float(invoice.amount_paid) - payload.amount
-        invoice.amount_due = float(invoice.amount_due) + payload.amount
-        invoice.status = "PARTIALLY_PAID" if invoice.amount_paid > 0 else "FINALIZED"
+        new_amount_paid = _D(invoice.amount_paid) - refund_amount
+        new_amount_due = _D(invoice.amount_due) + refund_amount
+        invoice.amount_paid = _money(new_amount_paid)
+        invoice.amount_due = _money(new_amount_due)
+        invoice.status = _status_for(new_amount_paid, new_amount_due)
         payment.status = "REFUNDED"
         patient_id = invoice.patient_id
     else:
@@ -603,10 +938,18 @@ async def create_refund(
         ensure_same_facility(deposit.facility_id, current_user)
         if deposit.status == "REFUNDED":
             raise ConflictError("This deposit has already been refunded.")
-        if payload.amount > deposit.amount:
+        if _D(payload.amount) > _D(deposit.amount):
             raise ConflictError("Refund amount exceeds the original deposit amount.")
+        original_reference = deposit.reference_number
         deposit.status = "REFUNDED"
         patient_id = deposit.patient_id
+
+    adapter = get_payment_adapter()
+    adapter_result = await adapter.process_refund(
+        amount=payload.amount, refund_mode=payload.refund_mode, original_reference=original_reference
+    )
+    if not adapter_result.success:
+        raise ConflictError(adapter_result.message or "Refund could not be processed.")
 
     refund = Refund(
         tenant_id=current_user.tenant_id,
@@ -617,6 +960,7 @@ async def create_refund(
         amount=payload.amount,
         reason=payload.reason,
         refund_mode=payload.refund_mode,
+        gateway_reference=adapter_result.transaction_reference,
         notes=payload.notes,
     )
     db.add(refund)
@@ -639,9 +983,17 @@ async def create_refund(
         after={"amount": str(payload.amount), "reason": payload.reason},
         commit=False,
     )
+    refund_out = RefundOut.model_validate(refund)
+    await _save_idempotency(
+        db,
+        current_user,
+        scope="create_refund",
+        idempotency_key=idempotency_key,
+        payload=request_payload,
+        response=refund_out.model_dump(mode="json"),
+    )
     await db.commit()
-    await db.refresh(refund)
-    return RefundOut.model_validate(refund)
+    return refund_out
 
 
 # ---------------------------------------------------------------------------
@@ -656,3 +1008,34 @@ async def get_receipt(db: AsyncSession, receipt_id: uuid.UUID, current_user: Use
     ensure_same_tenant(receipt.tenant_id, current_user)
     ensure_same_facility(receipt.facility_id, current_user)
     return ReceiptOut.model_validate(receipt)
+
+
+async def list_receipts(
+    db: AsyncSession,
+    current_user: User,
+    *,
+    patient_id: uuid.UUID | None = None,
+    payment_id: uuid.UUID | None = None,
+    deposit_id: uuid.UUID | None = None,
+    refund_id: uuid.UUID | None = None,
+) -> list[ReceiptOut]:
+    """Looks up the receipt(s) issued for a payment/deposit/refund - each of
+    those endpoints returns only its own record, not the `Receipt` row
+    `_issue_receipt` creates alongside it, so a caller (the cashier UI,
+    wanting to preview/print the receipt right after collecting a payment)
+    needs this to find it."""
+    stmt = select(Receipt).where(
+        Receipt.tenant_id == current_user.tenant_id, Receipt.facility_id == current_user.facility_id
+    )
+    if patient_id is not None:
+        stmt = stmt.where(Receipt.patient_id == patient_id)
+    if payment_id is not None:
+        stmt = stmt.where(Receipt.payment_id == payment_id)
+    if deposit_id is not None:
+        stmt = stmt.where(Receipt.deposit_id == deposit_id)
+    if refund_id is not None:
+        stmt = stmt.where(Receipt.refund_id == refund_id)
+    stmt = stmt.order_by(Receipt.issued_at.desc())
+
+    result = await db.execute(stmt)
+    return [ReceiptOut.model_validate(receipt) for receipt in result.scalars().all()]

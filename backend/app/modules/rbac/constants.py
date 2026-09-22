@@ -61,12 +61,17 @@ PERMISSION_CATALOG: list[tuple[str, str, str]] = [
     ("prescriptions.manage", "opd", "Create and update OPD prescriptions"),
     ("ipd.view", "ipd", "View IPD wards, rooms, beds, and admissions"),
     ("ipd.manage_beds", "ipd", "Manage IPD wards, rooms, beds, admissions, transfers, and discharges"),
-    ("billing.view_services", "billing", "View the service and package master catalog"),
+    # Module-level access: opens the Billing module and covers every read
+    # endpoint (service/package catalog, invoices, payments, deposits,
+    # receipts). Deliberately a single permission, distinct from the
+    # per-action ones below - "can see the module" and "can act in it" are
+    # different questions, so a role can hold `billing.view` without any of
+    # the `*.create` permissions (module access != full billing authority).
+    ("billing.view", "billing", "View the billing module - services, packages, invoices, payments, deposits, and receipts"),
     ("billing.manage_services", "billing", "Create and update services and packages"),
-    ("billing.view_invoices", "billing", "View invoices, payments, deposits, and receipts"),
-    ("billing.create_invoice", "billing", "Create invoices and charges"),
-    ("billing.collect_payment", "billing", "Collect payments and deposits"),
-    ("billing.refund", "billing", "Refund payments and deposits"),
+    ("billing.invoice.create", "billing", "Create invoices and add line items"),
+    ("billing.payment.create", "billing", "Collect payments and deposits"),
+    ("billing.refund.create", "billing", "Refund payments and deposits"),
     ("lab.accession_sample", "lab", "Accession and track lab samples"),
     ("lab.enter_results", "lab", "Enter lab test results"),
     ("lab.verify_results", "lab", "Technically verify lab results"),
@@ -87,6 +92,19 @@ PERMISSION_CATALOG: list[tuple[str, str, str]] = [
 
 ALL_PERMISSION_CODES: list[str] = [code for code, _, _ in PERMISSION_CATALOG]
 
+# Every role except SUPER_ADMIN (which already gets everything via
+# `ALL_PERMISSION_CODES`) and BILLING_CASHIER (whose refund exclusion is a
+# deliberate, separately-decided restriction - see below) gets the full
+# billing permission set: view + create invoices + collect payments +
+# refund + manage the service/package catalog.
+_FULL_BILLING_ACCESS = [
+    "billing.view",
+    "billing.manage_services",
+    "billing.invoice.create",
+    "billing.payment.create",
+    "billing.refund.create",
+]
+
 ROLE_PERMISSION_SEED: dict[str, list[str]] = {
     SystemRole.SUPER_ADMIN: ALL_PERMISSION_CODES,
     SystemRole.HOSPITAL_ADMIN: [
@@ -106,12 +124,7 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "prescriptions.manage",
         "ipd.view",
         "ipd.manage_beds",
-        "billing.view_services",
-        "billing.manage_services",
-        "billing.view_invoices",
-        "billing.create_invoice",
-        "billing.collect_payment",
-        "billing.refund",
+        *_FULL_BILLING_ACCESS,
         "audit.view_logs",
     ],
     SystemRole.DOCTOR: [
@@ -128,6 +141,7 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "departments.view",
         "doctors.view",
         "documents.print",
+        *_FULL_BILLING_ACCESS,
     ],
     SystemRole.NURSE: [
         "patients.view",
@@ -139,6 +153,7 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "consultations.view",
         "prescriptions.view",
         "documents.print",
+        *_FULL_BILLING_ACCESS,
     ],
     SystemRole.RECEPTIONIST: [
         "patients.view",
@@ -149,16 +164,21 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "departments.view",
         "doctors.view",
         "documents.print",
+        *_FULL_BILLING_ACCESS,
     ],
+    # S5-B01: refund authority is deliberately withheld here - a cashier can
+    # view the module, create invoices, and collect payments/deposits, but
+    # not reverse them. Only HOSPITAL_ADMIN/SUPER_ADMIN get
+    # `billing.refund.create` by default; a facility that wants a specific
+    # cashier to process refunds grants it explicitly via role management
+    # rather than by default for the whole role.
     SystemRole.BILLING_CASHIER: [
-        "billing.view_services",
-        "billing.view_invoices",
-        "billing.create_invoice",
-        "billing.collect_payment",
-        "billing.refund",
+        "billing.view",
+        "billing.invoice.create",
+        "billing.payment.create",
         "documents.print",
     ],
-    SystemRole.LAB_TECH: ["lab.accession_sample", "lab.enter_results", "documents.print"],
-    SystemRole.LAB_APPROVER: ["lab.verify_results", "lab.approve_reports", "documents.print"],
-    SystemRole.AUDITOR: ["audit.view_logs"],
+    SystemRole.LAB_TECH: ["lab.accession_sample", "lab.enter_results", "documents.print", *_FULL_BILLING_ACCESS],
+    SystemRole.LAB_APPROVER: ["lab.verify_results", "lab.approve_reports", "documents.print", *_FULL_BILLING_ACCESS],
+    SystemRole.AUDITOR: ["audit.view_logs", *_FULL_BILLING_ACCESS],
 }

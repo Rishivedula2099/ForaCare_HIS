@@ -100,6 +100,18 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
     title: "Billing & Cashier",
     href: "/billing",
     iconName: "Receipt",
+    // Open to every role except Super Admin (deliberately excluded - see
+    // `_FULL_BILLING_ACCESS` in backend/app/modules/rbac/constants.py).
+    roles: [
+      ROLES.HOSPITAL_ADMIN,
+      ROLES.BILLING_CASHIER,
+      ROLES.DOCTOR,
+      ROLES.NURSE,
+      ROLES.RECEPTIONIST,
+      ROLES.LAB_TECH,
+      ROLES.LAB_APPROVER,
+      ROLES.AUDITOR,
+    ],
   },
   {
     title: "Laboratory",
