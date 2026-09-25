@@ -117,6 +117,19 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
     title: "Laboratory",
     href: "/laboratory",
     iconName: "FlaskConical",
+    // Mirrors backend `ROLE_PERMISSION_SEED`'s `lab.view` grants (every role
+    // except SUPER_ADMIN - hidden from the sidebar like Billing, though it
+    // still has the permission on the backend - and BILLING_CASHIER, which
+    // holds no lab permissions at all).
+    roles: [
+      ROLES.HOSPITAL_ADMIN,
+      ROLES.DOCTOR,
+      ROLES.NURSE,
+      ROLES.RECEPTIONIST,
+      ROLES.LAB_TECH,
+      ROLES.LAB_APPROVER,
+      ROLES.AUDITOR,
+    ],
   },
   {
     title: "Documents",
