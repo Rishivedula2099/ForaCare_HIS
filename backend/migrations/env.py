@@ -18,6 +18,7 @@ from app.modules.departments import models as departments_models  # noqa: F401
 from app.modules.doctors import models as doctors_models  # noqa: F401
 from app.modules.facilities import models as facilities_models  # noqa: F401
 from app.modules.ipd import models as ipd_models  # noqa: F401
+from app.modules.lab import models as lab_models  # noqa: F401
 from app.modules.opd import models as opd_models  # noqa: F401
 from app.modules.otp import models as otp_models  # noqa: F401
 from app.modules.patients import models as patients_models  # noqa: F401

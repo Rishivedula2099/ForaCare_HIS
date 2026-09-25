@@ -21,40 +21,54 @@ const _FULL_BILLING_ACCESS = [
   "billing.refund.create",
 ];
 
+// Mirrors the backend's `lab.view` (module-level access, mirroring
+// `billing.view`'s design) and `lab.manage_master` (Test/Parameter/
+// ReferenceRange master CRUD - P6-F01), kept separate from the granular
+// workflow permissions below.
+const _LAB_VIEW = ["lab.view"];
+const _LAB_MANAGE_MASTER = ["lab.view", "lab.manage_master"];
+
 /** Mirrors the backend's ROLE_PERMISSION_SEED (app/modules/rbac/constants.py). */
 const MOCK_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   [ROLES.SUPER_ADMIN]: [
     "patients.view", "patients.manage", "opd.manage_queue", "ipd.manage_beds",
-    ..._FULL_BILLING_ACCESS, "lab.accession_sample",
+    ..._FULL_BILLING_ACCESS, ..._LAB_MANAGE_MASTER, "lab.accession_sample",
     "lab.enter_results", "lab.verify_results", "lab.approve_reports", "documents.print",
     "audit.view_logs", "users.manage", "roles.view", "roles.manage", "facilities.manage",
     "tenants.manage", "system.diagnostics",
   ],
   [ROLES.HOSPITAL_ADMIN]: [
     "users.manage", "roles.view", "roles.manage", "facilities.manage", "patients.view",
-    ..._FULL_BILLING_ACCESS,
+    ..._FULL_BILLING_ACCESS, ..._LAB_MANAGE_MASTER,
     "audit.view_logs",
   ],
   [ROLES.DOCTOR]: [
     "patients.view", "patients.manage", "opd.manage_queue", "ipd.manage_beds", "documents.print",
-    ..._FULL_BILLING_ACCESS,
+    ..._FULL_BILLING_ACCESS, ..._LAB_VIEW,
   ],
-  [ROLES.NURSE]: ["patients.view", "ipd.manage_beds", "documents.print", ..._FULL_BILLING_ACCESS],
+  [ROLES.NURSE]: [
+    "patients.view", "ipd.manage_beds", "documents.print", ..._FULL_BILLING_ACCESS, ..._LAB_VIEW,
+  ],
   [ROLES.RECEPTIONIST]: [
-    "patients.view", "patients.manage", "opd.manage_queue", "documents.print", ..._FULL_BILLING_ACCESS,
+    "patients.view", "patients.manage", "opd.manage_queue", "documents.print",
+    ..._FULL_BILLING_ACCESS, ..._LAB_VIEW,
   ],
   // Refund authority is deliberately withheld here, matching the backend
   // seed (S5-B01) - a cashier can view the module, create invoices, and
   // collect payments/deposits, but not reverse them without an admin
-  // granting `billing.refund.create` explicitly.
+  // granting `billing.refund.create` explicitly. BILLING_CASHIER also holds
+  // no lab permissions at all.
   [ROLES.BILLING_CASHIER]: [
     "billing.view", "billing.invoice.create", "billing.payment.create", "documents.print",
   ],
-  [ROLES.LAB_TECH]: ["lab.accession_sample", "lab.enter_results", "documents.print", ..._FULL_BILLING_ACCESS],
-  [ROLES.LAB_APPROVER]: [
-    "lab.verify_results", "lab.approve_reports", "documents.print", ..._FULL_BILLING_ACCESS,
+  [ROLES.LAB_TECH]: [
+    ..._LAB_VIEW, "lab.accession_sample", "lab.enter_results", "documents.print", ..._FULL_BILLING_ACCESS,
   ],
-  [ROLES.AUDITOR]: ["audit.view_logs", ..._FULL_BILLING_ACCESS],
+  [ROLES.LAB_APPROVER]: [
+    ..._LAB_MANAGE_MASTER, "lab.verify_results", "lab.approve_reports", "documents.print",
+    ..._FULL_BILLING_ACCESS,
+  ],
+  [ROLES.AUDITOR]: ["audit.view_logs", ..._LAB_VIEW, ..._FULL_BILLING_ACCESS],
 };
 
 export const MOCK_TENANT: Tenant = {

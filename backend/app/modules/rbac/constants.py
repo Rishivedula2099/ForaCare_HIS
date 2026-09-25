@@ -72,6 +72,12 @@ PERMISSION_CATALOG: list[tuple[str, str, str]] = [
     ("billing.invoice.create", "billing", "Create invoices and add line items"),
     ("billing.payment.create", "billing", "Collect payments and deposits"),
     ("billing.refund.create", "billing", "Refund payments and deposits"),
+    # Module-level access: opens the Laboratory module and covers every read
+    # endpoint (test/parameter/reference-range master, orders, results),
+    # distinct from `lab.manage_master`/the per-action codes below - mirrors
+    # `billing.view` above (module access != full lab authority).
+    ("lab.view", "lab", "View the laboratory module - test master, orders, and results"),
+    ("lab.manage_master", "lab", "Create and update the lab test/parameter/reference-range master"),
     ("lab.accession_sample", "lab", "Accession and track lab samples"),
     ("lab.enter_results", "lab", "Enter lab test results"),
     ("lab.verify_results", "lab", "Technically verify lab results"),
@@ -125,6 +131,8 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "ipd.view",
         "ipd.manage_beds",
         *_FULL_BILLING_ACCESS,
+        "lab.view",
+        "lab.manage_master",
         "audit.view_logs",
     ],
     SystemRole.DOCTOR: [
@@ -142,6 +150,7 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "doctors.view",
         "documents.print",
         *_FULL_BILLING_ACCESS,
+        "lab.view",
     ],
     SystemRole.NURSE: [
         "patients.view",
@@ -154,6 +163,7 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "prescriptions.view",
         "documents.print",
         *_FULL_BILLING_ACCESS,
+        "lab.view",
     ],
     SystemRole.RECEPTIONIST: [
         "patients.view",
@@ -165,6 +175,7 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "doctors.view",
         "documents.print",
         *_FULL_BILLING_ACCESS,
+        "lab.view",
     ],
     # S5-B01: refund authority is deliberately withheld here - a cashier can
     # view the module, create invoices, and collect payments/deposits, but
@@ -178,7 +189,20 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "billing.payment.create",
         "documents.print",
     ],
-    SystemRole.LAB_TECH: ["lab.accession_sample", "lab.enter_results", "documents.print", *_FULL_BILLING_ACCESS],
-    SystemRole.LAB_APPROVER: ["lab.verify_results", "lab.approve_reports", "documents.print", *_FULL_BILLING_ACCESS],
-    SystemRole.AUDITOR: ["audit.view_logs", *_FULL_BILLING_ACCESS],
+    SystemRole.LAB_TECH: [
+        "lab.view",
+        "lab.accession_sample",
+        "lab.enter_results",
+        "documents.print",
+        *_FULL_BILLING_ACCESS,
+    ],
+    SystemRole.LAB_APPROVER: [
+        "lab.view",
+        "lab.manage_master",
+        "lab.verify_results",
+        "lab.approve_reports",
+        "documents.print",
+        *_FULL_BILLING_ACCESS,
+    ],
+    SystemRole.AUDITOR: ["audit.view_logs", "lab.view", *_FULL_BILLING_ACCESS],
 }
