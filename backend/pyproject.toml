@@ -24,6 +24,13 @@ dependencies = [
     "email-validator>=2.2.0",
     "python-multipart>=0.0.9",
     "Pillow>=10.4.0",
+    # P6-B08: lab report PDF generation - fpdf2 renders the document itself
+    # (header/table/signature block natively, plus its built-in Code39
+    # barcode primitive for the accession barcode); qrcode renders the
+    # verification QR as an image fpdf2 embeds (fpdf2 has no native QR
+    # support).
+    "fpdf2>=2.8.0",
+    "qrcode[pil]>=8.0",
 ]
 
 [project.optional-dependencies]

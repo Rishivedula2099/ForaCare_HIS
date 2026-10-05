@@ -278,12 +278,17 @@ function LabPageContent() {
         title="Laboratory"
         description="Test master, parameters, and reference ranges."
         actions={
-          canManage ? (
-            <Button size="sm" className="gap-1.5 text-xs" onClick={() => { setEditingTest(null); setDialogOpen(true); }}>
-              <Plus className="w-3.5 h-3.5" />
-              Add Test
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" asChild>
+              <Link href="/laboratory/accessioning">Accessioning</Link>
             </Button>
-          ) : undefined
+            {canManage ? (
+              <Button size="sm" className="gap-1.5 text-xs" onClick={() => { setEditingTest(null); setDialogOpen(true); }}>
+                <Plus className="w-3.5 h-3.5" />
+                Add Test
+              </Button>
+            ) : undefined}
+          </div>
         }
       />
 
