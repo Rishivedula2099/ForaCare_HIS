@@ -149,13 +149,16 @@ class ReferenceRange(Base):
 
 
 # ---------------------------------------------------------------------------
-# P6-B01: Lab workflow (Order -> Accession -> Sample -> Result -> Verification
-# -> Approval). Schema/service/API for this half of P6-B01 lands in a later
-# phase alongside accessioning/result-entry screens (P6-F02+); these tables
-# exist now so the full lifecycle in `docs/requirements.md` SS4.5
-# (`ORDER_PLACED -> BILLED -> ACCESSIONED -> SAMPLE_COLLECTED -> IN_TESTING ->
-# RESULT_ENTERED -> VERIFIED_APPROVED -> REPORT_DISPATCHED`) has a home to
-# migrate into incrementally.
+# P6-B01/P6-B02: Lab workflow (Order -> Accession -> Sample -> Result ->
+# Verification -> Approval). `LabOrder.status` is the P6-B02 order-level
+# state machine - ORDERED -> BILLED -> ACCESSIONED -> COLLECTION_PENDING ->
+# COLLECTED -> PROCESSING -> RESULT_ENTERED -> TECHNICALLY_VERIFIED ->
+# PENDING_APPROVAL -> APPROVED -> FINALIZED, with CANCELLED reachable from
+# any non-terminal state. Every transition goes through
+# `service.transition_lab_order_status`, which is the only place that may
+# write `LabOrder.status` - see `service.LAB_ORDER_TRANSITIONS` for the
+# complete transition map. Accessioning/result-entry screens land in a later
+# phase (P6-F02+).
 # ---------------------------------------------------------------------------
 
 
@@ -197,11 +200,18 @@ class LabOrder(Base):
     accession_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("lab_accessions.id"), nullable=True
     )
+    # Set once the order's tube is drawn/assigned under its `Accession`
+    # (P6-B03 `service.collect_sample`) - several `LabOrder`s sharing one
+    # tube (e.g. LFT+LIPID off one red-top draw) share the same `sample_id`.
+    sample_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lab_samples.id"), nullable=True
+    )
 
     order_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
-    # ORDER_PLACED | BILLED | ACCESSIONED | SAMPLE_COLLECTED | IN_TESTING |
-    # RESULT_ENTERED | VERIFIED_APPROVED | REPORT_DISPATCHED | CANCELLED
-    status: Mapped[str] = mapped_column(String(30), nullable=False, default="ORDER_PLACED")
+    # ORDERED | BILLED | ACCESSIONED | COLLECTION_PENDING | COLLECTED |
+    # PROCESSING | RESULT_ENTERED | TECHNICALLY_VERIFIED | PENDING_APPROVAL |
+    # APPROVED | FINALIZED | CANCELLED (P6-B02, see service.LAB_ORDER_TRANSITIONS)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="ORDERED")
     # NORMAL | URGENT | STAT
     priority: Mapped[str] = mapped_column(String(20), nullable=False, default="NORMAL")
     clinical_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -220,6 +230,36 @@ class LabOrder(Base):
     )
 
     test: Mapped["Test"] = relationship(lazy="selectin")
+
+
+class LabOrderStatusHistory(Base):
+    """Append-only status-transition log for a `LabOrder` (P6-B02) - mirrors
+    `SampleStatus`'s history-row pattern. Every row is written by
+    `service.transition_lab_order_status` alongside the mutation of
+    `LabOrder.status`, so this table is a complete audit trail of the order's
+    path through `service.LAB_ORDER_TRANSITIONS`."""
+
+    __tablename__ = "lab_order_status_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False
+    )
+    facility_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("facilities.id"), nullable=False
+    )
+    lab_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lab_orders.id"), nullable=False
+    )
+    changed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    remarks: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class Accession(Base):

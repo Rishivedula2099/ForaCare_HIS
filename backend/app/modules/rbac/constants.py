@@ -190,6 +190,10 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "documents.print",
     ],
     SystemRole.LAB_TECH: [
+        # P6-F03: accessioning looks a patient up by name/UID/MRN before
+        # folding their billed orders into an accession - read-only lookup,
+        # not the full `patients.manage` authority to register/edit one.
+        "patients.view",
         "lab.view",
         "lab.accession_sample",
         "lab.enter_results",
@@ -197,6 +201,10 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         *_FULL_BILLING_ACCESS,
     ],
     SystemRole.LAB_APPROVER: [
+        "patients.view",
+        # The Test master form (lab.manage_master) has an optional
+        # department picker, which fetches the department list.
+        "departments.view",
         "lab.view",
         "lab.manage_master",
         "lab.verify_results",
