@@ -87,6 +87,7 @@ PERMISSION_CATALOG: list[tuple[str, str, str]] = [
     ("doctors.view", "doctors", "View doctor master data"),
     ("doctors.manage", "doctors", "Create and update doctor records"),
     ("documents.print", "documents", "Print and generate documents"),
+    ("documents.manage_templates", "documents", "Create, version, and activate document templates"),
     ("audit.view_logs", "audit", "View audit trails and access logs"),
     ("users.manage", "settings", "Manage staff user accounts"),
     ("roles.view", "settings", "View roles and permissions"),
@@ -114,6 +115,8 @@ _FULL_BILLING_ACCESS = [
 ROLE_PERMISSION_SEED: dict[str, list[str]] = {
     SystemRole.SUPER_ADMIN: ALL_PERMISSION_CODES,
     SystemRole.HOSPITAL_ADMIN: [
+        "documents.print",
+        "documents.manage_templates",
         "users.manage",
         "roles.view",
         "roles.manage",

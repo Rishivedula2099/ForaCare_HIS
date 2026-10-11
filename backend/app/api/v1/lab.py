@@ -8,7 +8,8 @@ from app.core.permissions import require_permissions
 from app.core.responses import ApiResponse, success_response
 from app.modules.auth.models import User
 from app.modules.lab import service
-from app.modules.lab.report_pdf import build_lab_report_pdf
+from app.modules.documents import service as document_service
+from app.modules.documents.base import DocumentContext
 from app.modules.lab.schemas import (
     AccessionCreateRequest,
     ApproveResultsRequest,
@@ -618,17 +619,24 @@ async def get_lab_report_pdf(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permissions("lab.view")),
 ):
-    report = await service.get_lab_report(db, current_user, lab_order_id)
-    verify_url = (
-        f"{request.base_url}api/v1/lab/verify-doc?id={report.lab_order_id}&sig={report.report_qr_token}"
-        if report.report_qr_token
-        else None
+    # Same path as every other document (P7-B06): print permission checked
+    # first, facility ownership enforced, and the access audited.
+    document = await document_service.generate_document(
+        db,
+        "LAB_REPORT",
+        lab_order_id,
+        current_user,
+        DocumentContext(base_url=str(request.base_url)),
+        access={"disposition": "inline", "client_ip": request.client.host if request.client else None},
     )
-    pdf_bytes = build_lab_report_pdf(report, verify_url=verify_url)
     return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{report.order_number}.pdf"'},
+        content=document.content,
+        media_type=document.media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{document.filename}"',
+            "Cache-Control": "no-store, private",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

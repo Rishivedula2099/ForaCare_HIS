@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+  /* Geometry comes from the resolved paper format (layout.py). A continuous
+     thermal roll gets an explicit page size from the renderer instead. */
+  @page {
+    {% if page.height_mm %}size: {{ page.width_mm }}mm {{ page.height_mm }}mm;{% endif %}
+    margin: {{ page.margin_mm }}mm {{ page.margin_mm }}mm {{ page.margin_mm + (6 if page.paged else 0) }}mm {{ page.margin_mm }}mm;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #0f172a; margin: 0; font-size: {{ page.font_pt }}pt; }
+  .letterhead { text-align: center; border-bottom: 2px solid #334155; padding-bottom: 4px; margin-bottom: {{ 6 if page.compact else 12 }}px; }
+  .letterhead h1 { font-size: {{ "1.2em" if page.compact else "1.6em" }}; margin: 0 0 2px; }
+  .letterhead .contact, .letterhead .note { font-size: .8em; color: #475569; }
+  .letterhead h2 { font-size: 1.1em; margin: 4px 0 0; }
+  .grid { display: grid; grid-template-columns: repeat({{ page.columns }}, 1fr); gap: 6px 14px; margin-bottom: 10px; }
+  .field .label { font-size: .75em; color: #64748b; }
+  .field .value { font-weight: 700; word-break: break-word; }
+  .amount { font-size: 1.5em; font-weight: 700; margin: 10px 0; }
+  .signatures { display: flex; gap: 16px; margin-top: 44px; break-inside: avoid; }
+  .signatures div { flex: 1; border-top: 1px solid #94a3b8; padding-top: 3px; font-size: .8em; }
+  table.items { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  table.items th { text-align: left; font-size: .8em; color: #475569; border-bottom: 1px solid #334155; padding: 3px 4px; }
+  table.items td { padding: 3px 4px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  table.items .num { text-align: right; white-space: nowrap; }
+  h3 { font-size: 1em; margin: 12px 0 4px; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; }
+  p { line-height: 1.45; margin: 4px 0; }
+  .pre { white-space: pre-wrap; }
+  .qr { width: 18mm; height: 18mm; }
+  .secure { display: flex; align-items: center; gap: 4mm; margin-top: 14px; break-inside: avoid; }
+  .secure .bar { flex: 1; min-width: 0; text-align: center; }
+  .secure .barcode { width: 100%; height: {{ "9mm" if page.compact else "11mm" }}; display: block; }
+  .secure .ref { font-size: .8em; letter-spacing: .05em; margin-top: 1px; }
+  .secure .scan { font-size: .65em; color: #64748b; text-align: center; }
+  .secure img { width: {{ "14mm" if page.compact else "18mm" }}; height: {{ "14mm" if page.compact else "18mm" }}; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+  {% if not hide_letterhead %}
+  <div class="letterhead">
+    <h1>{{ facility.name }}</h1>
+    <div class="contact">
+      {%- if settings.show_facility_contact -%}
+        {{ [facility.address, facility.phone, facility.facility_code] | select | join(" | ") }}
+      {%- else -%}
+        {{ facility.facility_code }}
+      {%- endif -%}
+    </div>
+    {% if settings.header_note %}<div class="note">{{ settings.header_note }}</div>{% endif %}
+    <h2>{{ title }}</h2>
+  </div>
+  {% endif %}
+
+  {% block content %}{% endblock %}
+
+  {% if secure_qr %}
+  <div class="secure">
+    <div class="bar">{{ secure_barcode }}<div class="ref">{{ secure_reference }}</div></div>
+    <div><img src="{{ secure_qr }}" alt="Verification QR"><div class="scan">Scan to verify</div></div>
+  </div>
+  {% endif %}
+
+  {% if not page.compact and (settings.signature_labels or default_signatures) %}
+  <div class="signatures">
+    {% for label in (settings.signature_labels or default_signatures) %}<div>{{ label }}</div>{% endfor %}
+  </div>
+  {% endif %}
+</body>
+</html>

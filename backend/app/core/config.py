@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # P3-B06: HMAC key signing each OPD check-in QR reference, so a code's
     # authenticity can be checked structurally (mismatched/tampered
     # signature) before ever touching the database.
+    # P7-B05: public origin printed into document QR codes (e.g.
+    # https://his.example.com). Empty = use the host the request came in on.
+    public_base_url: str = ""
     qr_signing_secret_key: str = "local-dev-only-insecure-qr-secret-change-me"
 
     cookie_domain: str | None = None
@@ -44,6 +47,11 @@ class Settings(BaseSettings):
     otp_expire_minutes: int = 10
     otp_max_attempts: int = 5
     otp_resend_cooldown_seconds: int = 60
+
+    # P7-B03: Chromium refuses to start as root / without user namespaces
+    # (typical in containers) unless its sandbox is disabled. Safe here
+    # because it only renders our own server-generated, autoescaped HTML.
+    pdf_chromium_no_sandbox: bool = False
 
     file_storage_root: str = "./storage"
     file_upload_max_bytes: int = 5 * 1024 * 1024

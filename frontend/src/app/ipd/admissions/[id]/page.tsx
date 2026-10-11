@@ -36,6 +36,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { getPatient, toPatient } from "@/lib/patient-api";
 import { listDoctors } from "@/lib/doctor-api";
+import { PrintDocumentButton } from "@/components/documents/print-document-button";
 import { listDepartments } from "@/lib/department-api";
 import {
   dischargeAdmission,
@@ -442,12 +443,18 @@ function AdmissionDetailContent({ admissionId }: { admissionId: string }) {
         title={patient?.fullName ?? "Admission"}
         description={`Admission ${admission.admissionNumber}`}
         actions={
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" asChild>
-            <Link href="/ipd">
-              <ArrowLeft className="w-3.5 h-3.5" />
-              Back to Bed Board
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <PrintDocumentButton type="IPD_ADMISSION_FORM" resourceId={admission.id} label="Admission Form" />
+            {admission.status === "DISCHARGED" && (
+              <PrintDocumentButton type="IPD_DISCHARGE_SUMMARY" resourceId={admission.id} label="Discharge Summary" />
+            )}
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" asChild>
+              <Link href="/ipd">
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to Bed Board
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -551,6 +558,7 @@ function AdmissionDetailContent({ admissionId }: { admissionId: string }) {
                         Print
                       </Link>
                     </Button>
+                    <PrintDocumentButton type="IPD_CONSENT" resourceId={consent.id} label="PDF" variant="ghost" className="gap-1 text-xs h-7" />
                   </div>
                 </div>
               ))}

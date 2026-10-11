@@ -33,6 +33,7 @@ import { Select } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PageLoadingState } from "@/components/states/loading-state";
 
+import { PrintDocumentButton } from "@/components/documents/print-document-button";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -505,18 +506,22 @@ function ConsultationPageContent() {
         title={`Consultation — ${encounter.patient.fullName}`}
         description={`${encounter.encounterNumber} • Token #${encounter.token?.tokenNumber ?? "—"} • ${encounter.doctor.fullName} • ${encounter.department.name}`}
         actions={
-          consultation && (
-            <Badge
-              variant="outline"
-              className={
-                consultation.status === "COMPLETED"
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                  : "bg-amber-50 text-amber-700 border-amber-300"
-              }
-            >
-              {consultation.status === "COMPLETED" ? "Completed" : "In Progress"}
-            </Badge>
-          )
+          <div className="flex flex-wrap items-center gap-2">
+            {encounter.token && <PrintDocumentButton type="OPD_TOKEN" resourceId={encounter.id} />}
+            {consultation && <PrintDocumentButton type="OPD_PRESCRIPTION" resourceId={encounter.id} />}
+            {consultation && (
+              <Badge
+                variant="outline"
+                className={
+                  consultation.status === "COMPLETED"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                    : "bg-amber-50 text-amber-700 border-amber-300"
+                }
+              >
+                {consultation.status === "COMPLETED" ? "Completed" : "In Progress"}
+              </Badge>
+            )}
+          </div>
         }
       />
 

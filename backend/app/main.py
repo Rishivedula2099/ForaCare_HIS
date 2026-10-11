@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.database import dispose_engine
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
+from app.modules.documents.playwright_pdf import shutdown_pdf_engine
 from app.core.middleware import CorrelationIdMiddleware
 
 settings = get_settings()
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
     logger.info("%s starting up (environment=%s)", settings.app_name, settings.environment)
     yield
     logger.info("%s shutting down", settings.app_name)
+    await shutdown_pdf_engine()
     await dispose_engine()
 
 

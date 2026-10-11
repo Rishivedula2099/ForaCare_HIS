@@ -61,6 +61,7 @@ import {
   recordPayment,
   toInvoiceItemPayload,
 } from "@/lib/billing-api";
+import { PrintDocumentButton } from "@/components/documents/print-document-button";
 import { ApiError } from "@/types/api";
 import {
   INVOICE_STATUS_BADGE_CLASS,
@@ -528,12 +529,15 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
         title={invoice.invoiceNumber}
         description={patient ? `${patient.fullName} • ${patient.uid}` : "Loading patient..."}
         actions={
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" asChild>
-            <Link href="/billing">
-              <ArrowLeft className="w-3.5 h-3.5" />
-              Back to Billing
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <PrintDocumentButton type="INVOICE" resourceId={invoice.id} />
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" asChild>
+              <Link href="/billing">
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to Billing
+              </Link>
+            </Button>
+          </div>
         }
       />
 
