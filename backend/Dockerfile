@@ -21,6 +21,16 @@ RUN apt-get update \
 
 COPY --from=builder /install /usr/local
 
+# P7-B03: headless Chromium (plus its OS libraries) for HTML -> PDF. Installed
+# to a shared path so the non-root runtime user can launch it; the sandbox is
+# disabled because it cannot start in an unprivileged container - the browser
+# only ever renders our own autoescaped, network-blocked HTML.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PDF_CHROMIUM_NO_SANDBOX=true
+RUN playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY app ./app
 COPY migrations ./migrations

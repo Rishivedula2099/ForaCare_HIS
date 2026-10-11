@@ -31,6 +31,11 @@ dependencies = [
     # support).
     "fpdf2>=2.8.0",
     "qrcode[pil]>=8.0",
+    # P7-B03: HTML/CSS templates (Jinja2) rendered to PDF by headless
+    # Chromium. The browser itself is installed separately
+    # (`playwright install chromium`; done in the Dockerfile).
+    "jinja2>=3.1.0",
+    "playwright>=1.48.0",
 ]
 
 [project.optional-dependencies]

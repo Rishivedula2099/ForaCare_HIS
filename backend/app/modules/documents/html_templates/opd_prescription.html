@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <div class="field"><div class="label">Patient</div><div class="value">{{ patient_name }}</div></div>
+  <div class="field"><div class="label">UID / MRN</div><div class="value">{{ patient.uid }} / {{ patient.mrn }}</div></div>
+  <div class="field"><div class="label">Doctor</div><div class="value">{{ doctor_name or "-" }}</div></div>
+  <div class="field"><div class="label">Date</div><div class="value">{{ created_at }}</div></div>
+</div>
+{% if consultation.diagnosis %}<h3>Diagnosis</h3><p class="pre">{{ consultation.diagnosis }}</p>{% endif %}
+{% if consultation.allergies %}<p><strong>Allergies:</strong> {{ consultation.allergies }}</p>{% endif %}
+<h3>Rx</h3>
+<table class="items">
+  <thead><tr><th>#</th><th>Medicine</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead>
+  <tbody>
+  {% for item in items %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td><strong>{{ item.drug_name }}</strong>{% if item.route %} <small>({{ item.route }})</small>{% endif %}
+        {% if item.instructions %}<br><small>{{ item.instructions }}</small>{% endif %}</td>
+      <td>{{ item.dosage or "-" }}</td><td>{{ item.frequency or "-" }}</td><td>{{ item.duration or "-" }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No medicines prescribed.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

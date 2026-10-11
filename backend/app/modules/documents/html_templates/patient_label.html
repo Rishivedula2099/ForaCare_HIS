@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="display:flex; gap:2mm; align-items:center;">
+  <div style="flex:1; min-width:0; line-height:1.25;">
+    <div style="font-size:.7em; color:#475569;">{{ facility.name }}</div>
+    <div style="font-weight:800; font-size:1.15em; word-break:break-word;">{{ patient_name }}</div>
+    <div style="font-size:.9em;">{{ patient.uid }}</div>
+    <div style="font-size:.9em;">MRN {{ patient.mrn }}</div>
+    <div style="font-size:.8em;">{{ patient.gender }} | {{ patient.dob.strftime("%d-%b-%Y") }}</div>
+  </div>
+  <img class="qr" src="{{ qr }}" alt="MRN QR">
+</div>
+{% endblock %}

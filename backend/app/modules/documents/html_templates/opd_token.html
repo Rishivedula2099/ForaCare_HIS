@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="text-align:center; margin: 6px 0;">
+  <div style="font-size:.75em;color:#64748b;">Token</div>
+  <div style="font-size:3.2em; font-weight:800; line-height:1;">{{ token.token_number }}</div>
+  {% if token.priority and token.priority != "NORMAL" %}<div style="font-weight:700;">{{ token.priority }}</div>{% endif %}
+</div>
+<div class="grid">
+  <div class="field"><div class="label">Patient</div><div class="value">{{ patient_name }}</div></div>
+  <div class="field"><div class="label">UID / MRN</div><div class="value">{{ patient.uid }} / {{ patient.mrn }}</div></div>
+  <div class="field"><div class="label">Doctor</div><div class="value">{{ doctor_name or "-" }}</div></div>
+  <div class="field"><div class="label">Department</div><div class="value">{{ department_name or "-" }}</div></div>
+  <div class="field"><div class="label">Date</div><div class="value">{{ token.token_date.strftime("%d %b %Y") }}</div></div>
+  <div class="field"><div class="label">Encounter</div><div class="value">{{ encounter.encounter_number }}</div></div>
+</div>
+{% endblock %}

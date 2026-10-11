@@ -7,8 +7,9 @@ import { Printer } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 import { Button } from "@/components/ui/button";
+import { PrintDocumentButton } from "@/components/documents/print-document-button";
 import { API_BASE_URL } from "@/lib/constants";
-import { getLabReport, getLabReportPdfUrl } from "@/lib/lab-api";
+import { getLabReport } from "@/lib/lab-api";
 import { ResultFlag } from "@/types/lab";
 
 function flagTone(flag: ResultFlag): string {
@@ -70,11 +71,7 @@ export default function LabReportPage() {
       <div className="print:hidden flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
         <h1 className="text-sm font-bold">Laboratory Investigation Report</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" asChild>
-            <a href={getLabReportPdfUrl(report.labOrderId)} target="_blank" rel="noopener noreferrer">
-              Download PDF
-            </a>
-          </Button>
+          <PrintDocumentButton type="LAB_REPORT" resourceId={report.labOrderId} label="PDF" />
           <Button size="sm" className="gap-1.5 text-xs" onClick={() => window.print()}>
             <Printer className="w-3.5 h-3.5" />
             Print
