@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Printer } from "lucide-react";
 
+import { PrintDocumentButton } from "@/components/documents/print-document-button";
 import { Button } from "@/components/ui/button";
 import { getPatient, toPatient } from "@/lib/patient-api";
 import { getReceipt } from "@/lib/billing-api";
@@ -40,10 +41,13 @@ export default function ReceiptPrintPage() {
     <div className="min-h-screen bg-white text-slate-900">
       <div className="print:hidden flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
         <h1 className="text-sm font-bold">{RECEIPT_TYPE_LABEL[receipt.receiptType] ?? "Receipt"}</h1>
-        <Button size="sm" className="gap-1.5 text-xs" onClick={() => window.print()}>
-          <Printer className="w-3.5 h-3.5" />
-          Print
-        </Button>
+        <div className="flex items-center gap-2">
+          <PrintDocumentButton type="RECEIPT" resourceId={receiptId} label="PDF / paper size" />
+          <Button size="sm" className="gap-1.5 text-xs" onClick={() => window.print()}>
+            <Printer className="w-3.5 h-3.5" />
+            Print
+          </Button>
+        </div>
       </div>
 
       <div className="max-w-md mx-auto p-8 print:p-6">

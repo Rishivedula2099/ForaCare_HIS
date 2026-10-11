@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <div class="field"><div class="label">Invoice No.</div><div class="value">{{ invoice.invoice_number }}</div></div>
+  <div class="field"><div class="label">Date</div><div class="value">{{ invoice_date }}</div></div>
+  <div class="field"><div class="label">Patient</div><div class="value">{{ patient_name }}</div></div>
+  <div class="field"><div class="label">UID / MRN</div><div class="value">{{ patient.uid }} / {{ patient.mrn }}</div></div>
+</div>
+<table class="items">
+  <thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th></tr></thead>
+  <tbody>
+  {% for item in items %}
+    <tr><td>{{ item.description }}</td><td class="num">{{ item.quantity }}</td>
+        <td class="num">{{ item.unit_price | money }}</td><td class="num">{{ item.total_amount | money }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<table class="items" style="width:60%; margin-left:auto;">
+  <tr><td>Subtotal</td><td class="num">{{ invoice.subtotal | money }}</td></tr>
+  <tr><td>Discount</td><td class="num">{{ invoice.discount_amount | money }}</td></tr>
+  <tr><td>Tax</td><td class="num">{{ invoice.tax_amount | money }}</td></tr>
+  <tr><td><strong>Total ({{ facility.currency }})</strong></td><td class="num"><strong>{{ invoice.total_amount | money }}</strong></td></tr>
+  <tr><td>Paid</td><td class="num">{{ invoice.amount_paid | money }}</td></tr>
+  <tr><td><strong>Due</strong></td><td class="num"><strong>{{ invoice.amount_due | money }}</strong></td></tr>
+</table>
+<p>Status: {{ invoice.status }}</p>
+{% endblock %}

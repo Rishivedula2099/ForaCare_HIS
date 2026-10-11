@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <div class="field"><div class="label">Admission No.</div><div class="value">{{ admission.admission_number }}</div></div>
+  <div class="field"><div class="label">Admitted</div><div class="value">{{ admitted_at }}</div></div>
+  <div class="field"><div class="label">Patient</div><div class="value">{{ patient_name }}</div></div>
+  <div class="field"><div class="label">UID / MRN</div><div class="value">{{ patient.uid }} / {{ patient.mrn }}</div></div>
+  <div class="field"><div class="label">Gender / DOB</div><div class="value">{{ patient.gender }} / {{ patient.dob.strftime("%d %b %Y") }}</div></div>
+  <div class="field"><div class="label">Blood group</div><div class="value">{{ patient.blood_group }}</div></div>
+  <div class="field"><div class="label">Admitting doctor</div><div class="value">{{ doctor_name or "-" }}</div></div>
+  <div class="field"><div class="label">Department</div><div class="value">{{ department_name or "-" }}</div></div>
+  <div class="field"><div class="label">Admission type</div><div class="value">{{ admission.admission_type }}</div></div>
+  <div class="field"><div class="label">Payment category</div><div class="value">{{ admission.payment_category or "-" }}</div></div>
+  <div class="field"><div class="label">Referral</div><div class="value">{{ admission.referral_source }}{% if admission.referral_detail %} - {{ admission.referral_detail }}{% endif %}</div></div>
+</div>
+{% if admission.notes %}<h3>Notes</h3><p class="pre">{{ admission.notes }}</p>{% endif %}
+{% endblock %}
