@@ -48,3 +48,6 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "sandbox: live ABDM sandbox tests; skipped unless ABDM_SANDBOX_CLIENT_ID/ABDM_SANDBOX_CLIENT_SECRET are set",
+]
