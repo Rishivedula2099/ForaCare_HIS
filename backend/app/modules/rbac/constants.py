@@ -53,6 +53,11 @@ SYSTEM_ROLE_NUMERIC_CODES: dict[str, int] = {
 PERMISSION_CATALOG: list[tuple[str, str, str]] = [
     ("patients.view", "patients", "View patient records"),
     ("patients.manage", "patients", "Register and update patient records"),
+    # P8-B05: the ABHA is a national identity - linking one (and recording
+    # consent against it) and, more sensitively, removing one are separate
+    # authorities from editing demographics.
+    ("patients.link_abha", "patients", "Verify and link a patient's ABHA and record ABDM consent"),
+    ("patients.unlink_abha", "patients", "Unlink a patient's ABHA"),
     ("opd.view", "opd", "View OPD encounters, tokens, and the doctor queue"),
     ("opd.manage_queue", "opd", "Manage OPD queue and appointments"),
     ("consultations.view", "opd", "View OPD consultation records and patient history"),
@@ -122,6 +127,8 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
         "roles.manage",
         "facilities.manage",
         "patients.view",
+        "patients.link_abha",
+        "patients.unlink_abha",
         "departments.view",
         "departments.manage",
         "doctors.view",
@@ -171,6 +178,7 @@ ROLE_PERMISSION_SEED: dict[str, list[str]] = {
     SystemRole.RECEPTIONIST: [
         "patients.view",
         "patients.manage",
+        "patients.link_abha",
         "opd.view",
         "opd.manage_queue",
         "ipd.view",

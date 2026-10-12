@@ -467,3 +467,92 @@ export async function getPatientPhotoBlobUrl(id: string, photoId: string): Promi
   });
   return URL.createObjectURL(response.data as Blob);
 }
+
+// ---------------------------------------------------------------------------
+// ABDM gateway status (P8-F01) - backend/app/api/v1/abdm.py
+// ---------------------------------------------------------------------------
+
+export interface AbdmConnectionStatus {
+  mode: "mock" | "sandbox" | "production";
+  connected: boolean;
+  message?: string | null;
+}
+
+export async function getAbdmStatus(): Promise<AbdmConnectionStatus> {
+  const response = await apiClient.get<AbdmConnectionStatus>("/abdm/status");
+  if (!response.data) {
+    throw new Error("ABDM status unavailable");
+  }
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// ABHA workflow (P8-F02) - backend/app/api/v1/abdm.py
+// ---------------------------------------------------------------------------
+
+export type AbdmAuthMethod = "AADHAAR_OTP" | "MOBILE_OTP";
+export type AbhaConsentPurpose = "CARE_MANAGEMENT" | "HEALTH_RECORDS_SHARING" | "RESEARCH";
+
+export interface AbhaConsent {
+  id: string;
+  purpose: AbhaConsentPurpose;
+  status: "GRANTED" | "REVOKED";
+  granted_at: string;
+  revoked_at?: string | null;
+}
+
+export interface AbhaStatus {
+  patient_id: string;
+  status: "UNVERIFIED" | "VERIFIED" | "LINKED";
+  abha_number?: string | null;
+  abha_address?: string | null;
+  linked_at?: string | null;
+  consents: AbhaConsent[];
+}
+
+async function unwrap<T>(promise: Promise<{ data?: T | null }>, what: string): Promise<T> {
+  const response = await promise;
+  if (!response.data) {
+    throw new Error(`${what} returned no data`);
+  }
+  return response.data;
+}
+
+export const getAbhaStatus = (patientId: string) =>
+  unwrap(apiClient.get<AbhaStatus>(`/abdm/patients/${patientId}/abha`), "ABHA status");
+
+export const requestAbhaOtp = (authMethod: AbdmAuthMethod, identifier: string) =>
+  unwrap(
+    apiClient.post<{ transaction_id: string; message?: string | null }>("/abdm/otp", {
+      auth_method: authMethod,
+      identifier,
+    }),
+    "OTP request"
+  );
+
+export const verifyAbha = (patientId: string, transactionId: string, otp: string) =>
+  unwrap(
+    apiClient.post<AbhaStatus>(`/abdm/patients/${patientId}/abha/verify`, {
+      transaction_id: transactionId,
+      otp,
+    }),
+    "ABHA verification"
+  );
+
+export const linkAbha = (patientId: string) =>
+  unwrap(apiClient.post<AbhaStatus>(`/abdm/patients/${patientId}/abha/link`), "ABHA link");
+
+export const unlinkAbha = (patientId: string) =>
+  unwrap(apiClient.delete<AbhaStatus>(`/abdm/patients/${patientId}/abha`), "ABHA unlink");
+
+export const grantAbhaConsent = (patientId: string, purpose: AbhaConsentPurpose) =>
+  unwrap(
+    apiClient.post<AbhaConsent>(`/abdm/patients/${patientId}/abha/consents`, { purpose }),
+    "Consent"
+  );
+
+export const revokeAbhaConsent = (patientId: string, consentId: string) =>
+  unwrap(
+    apiClient.post<AbhaConsent>(`/abdm/patients/${patientId}/abha/consents/${consentId}/revoke`),
+    "Consent revoke"
+  );

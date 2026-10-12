@@ -31,7 +31,7 @@ const _LAB_MANAGE_MASTER = ["lab.view", "lab.manage_master"];
 /** Mirrors the backend's ROLE_PERMISSION_SEED (app/modules/rbac/constants.py). */
 const MOCK_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   [ROLES.SUPER_ADMIN]: [
-    "patients.view", "patients.manage", "opd.manage_queue", "ipd.manage_beds",
+    "patients.view", "patients.manage", "patients.link_abha", "patients.unlink_abha", "opd.manage_queue", "ipd.manage_beds",
     ..._FULL_BILLING_ACCESS, ..._LAB_MANAGE_MASTER, "lab.accession_sample",
     "lab.enter_results", "lab.verify_results", "lab.approve_reports", "documents.print",
     "audit.view_logs", "users.manage", "roles.view", "roles.manage", "facilities.manage",
@@ -39,6 +39,7 @@ const MOCK_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   ],
   [ROLES.HOSPITAL_ADMIN]: [
     "users.manage", "roles.view", "roles.manage", "facilities.manage", "patients.view",
+    "patients.link_abha", "patients.unlink_abha",
     ..._FULL_BILLING_ACCESS, ..._LAB_MANAGE_MASTER,
     "audit.view_logs",
   ],
@@ -50,7 +51,7 @@ const MOCK_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     "patients.view", "ipd.manage_beds", "documents.print", ..._FULL_BILLING_ACCESS, ..._LAB_VIEW,
   ],
   [ROLES.RECEPTIONIST]: [
-    "patients.view", "patients.manage", "opd.manage_queue", "documents.print",
+    "patients.view", "patients.manage", "patients.link_abha", "opd.manage_queue", "documents.print",
     ..._FULL_BILLING_ACCESS, ..._LAB_VIEW,
   ],
   // Refund authority is deliberately withheld here, matching the backend

@@ -21,7 +21,6 @@ import {
   Users,
   Mail,
   BadgeCheck,
-  Clock,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -39,6 +38,7 @@ import {
   getPatientPhotoBlobUrl,
   PatientViewModel,
 } from "@/lib/patient-api";
+import { AbhaWorkflow } from "@/components/patients/abha-workflow";
 import { listInvoices } from "@/lib/billing-api";
 import { INVOICE_STATUS_BADGE_CLASS, InvoiceStatus } from "@/types/billing";
 
@@ -469,41 +469,7 @@ export default function PatientProfilePage() {
           </TabsContent>
 
           <TabsContent value="abha">
-            <Card className="shadow-xs border-teal-200 bg-teal-50/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-teal-600" />
-                  Ayushman Bharat Digital Mission (ABHA)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className={
-                      patient.abha.status === "VERIFIED" || patient.abha.status === "LINKED"
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                        : "bg-amber-50 text-amber-800 border-amber-300"
-                    }
-                  >
-                    {patient.abha.status}
-                  </Badge>
-                </div>
-                <InfoRow icon={BadgeCheck} label="ABHA Number" value={patient.abha.abhaNumber} />
-                <InfoRow icon={BadgeCheck} label="ABHA Address" value={patient.abha.abhaAddress} />
-                <InfoRow
-                  icon={Clock}
-                  label="Verified / Linked At"
-                  value={patient.abha.verifiedAt && new Date(patient.abha.verifiedAt).toLocaleString()}
-                />
-                {!patient.abha.abhaNumber && !patient.abha.abhaAddress && (
-                  <p className="text-xs text-slate-500">
-                    This patient hasn&apos;t linked an ABHA ID yet. The internal Patient UID above remains the
-                    permanent identifier regardless of ABHA linkage status.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <AbhaWorkflow patientId={patientId} mobile={patient.mobile} />
           </TabsContent>
 
           <TabsContent value="timeline">
