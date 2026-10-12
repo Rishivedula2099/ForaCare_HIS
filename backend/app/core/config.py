@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,6 +63,46 @@ class Settings(BaseSettings):
     # locally; a future production gateway integration registers its own
     # name there without any change to app/modules/billing/service.py.
     payment_adapter: str = "mock"
+
+    # P8-B01: selects the `AbdmAdapter` implementation
+    # (app/modules/abdm/factory.py): "mock" (offline), "sandbox" (NHA
+    # sandbox) or "production". base_url defaults per mode when blank.
+    abdm_adapter: str = "mock"
+    abdm_base_url: str = ""
+    abdm_client_id: str = ""
+    # P8-B04: never committed - supplied only through the environment (or an
+    # untracked .env). SecretStr keeps it out of repr()/logs/tracebacks;
+    # read it with .get_secret_value() at the single point of use.
+    abdm_client_secret: SecretStr = SecretStr("")
+    abdm_timeout_seconds: float = 10.0
+    abdm_max_retries: int = 2
+    abdm_retry_backoff_seconds: float = 0.5
+    # Mock adapter only: "" (normal) | "timeout" | "unavailable" | "rejected"
+    # | "flaky" (every other OTP request fails, so a retry succeeds) - lets
+    # the UI's pending/failed/timeout/retry states be exercised offline.
+    abdm_mock_simulate: str = ""
+
+    @model_validator(mode="after")
+    def _reject_insecure_secrets_outside_local(self) -> "Settings":
+        """P8-B04: the built-in dev defaults are public (they're in this
+        repo), so any non-local environment must override every one."""
+        if self.is_local:
+            return self
+        insecure = [
+            name
+            for name in (
+                "jwt_access_secret_key",
+                "jwt_refresh_secret_key",
+                "qr_signing_secret_key",
+            )
+            if "local-dev-only" in getattr(self, name)
+        ]
+        if insecure:
+            raise ValueError(
+                f"ENVIRONMENT={self.environment!r} requires real values for: "
+                + ", ".join(name.upper() for name in insecure)
+            )
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

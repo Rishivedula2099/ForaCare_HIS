@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.abdm import router as abdm_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.billing import router as billing_router
@@ -30,3 +31,4 @@ api_v1_router.include_router(ipd_router)
 api_v1_router.include_router(billing_router)
 api_v1_router.include_router(lab_router)
 api_v1_router.include_router(documents_router)
+api_v1_router.include_router(abdm_router)

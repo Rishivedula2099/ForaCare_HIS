@@ -28,6 +28,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://forahis:forahis@postgres:5432/forahis
       JWT_ACCESS_SECRET_KEY: local-dev-only-insecure-access-secret-change-me
       JWT_REFRESH_SECRET_KEY: local-dev-only-insecure-refresh-secret-change-me
+      # ABDM credentials are never written here: set them in the host
+      # environment (or an untracked .env next to this file).
+      ABDM_ADAPTER: ${ABDM_ADAPTER:-mock}
+      ABDM_CLIENT_ID: ${ABDM_CLIENT_ID:-}
+      ABDM_CLIENT_SECRET: ${ABDM_CLIENT_SECRET:-}
       ACCESS_TOKEN_EXPIRE_MINUTES: "15"
       REFRESH_TOKEN_EXPIRE_DAYS: "3"
     command: >
