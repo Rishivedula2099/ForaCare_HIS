@@ -8,7 +8,7 @@
  */
 
 import { apiClient } from "@/lib/api-client";
-import { calculateAgeFromDob } from "@/lib/patient-store";
+import { calculateAgeFromDob } from "@/lib/patient-utils";
 import {
   ABHAVerificationStatus,
   BloodGroup,

@@ -7,68 +7,111 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Eye, EyeOff, ShieldCheck, Building2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { Logo } from "@/components/common/logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
-import { DEMO_PRESETS, MOCK_FACILITIES } from "@/lib/auth-mock";
-import { MOCK_AUTH_ENABLED } from "@/lib/constants";
-import { safeRedirectPath } from "@/lib/safe-redirect";
-
-// P9-F01: the one-click demo credentials are a development aid only.
-const SHOW_DEMO_LOGIN = MOCK_AUTH_ENABLED;
-import { ROLE_METADATA_MAP } from "@/types/auth";
+import { IS_DEV_BUILD } from "@/lib/constants";
+import { resolvePostLoginPath } from "@/lib/route-access";
+import { AuthError, AuthUser } from "@/types/auth";
 
 const loginSchema = z.object({
-  username: z.string().min(1, "Username is required."),
+  username: z.string().min(1, "Username or email is required."),
   password: z.string().min(1, "Password is required."),
-  facility_id: z.string().optional(),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-const FACILITY_OPTIONS = MOCK_FACILITIES.map((facility) => ({
-  value: facility.id,
-  label: `${facility.name} (${facility.facility_code})`,
-}));
+type AlertVariant = "info" | "success" | "warning" | "destructive";
+
+/** Notices carried in from elsewhere via `?reason=`. */
+const REASON_NOTICES: Record<string, { variant: AlertVariant; text: string }> = {
+  expired: { variant: "warning", text: "Your session has expired. Please sign in again." },
+  idle: { variant: "info", text: "You were signed out after a period of inactivity." },
+  reset: { variant: "success", text: "Your password has been updated. Sign in with your new password." },
+  activated: { variant: "success", text: "Your account is active. Sign in with the password you just chose." },
+};
+
+/** How each sign-in failure is presented. */
+function describeFailure(error: unknown): { variant: AlertVariant; title: string; text: string } {
+  const failure = error instanceof AuthError ? error : null;
+  switch (failure?.code) {
+    case "INVALID_CREDENTIALS":
+      return { variant: "destructive", title: "Sign-in failed", text: "Invalid username or password." };
+    case "ACCOUNT_DISABLED":
+      return {
+        variant: "warning",
+        title: "Account disabled",
+        text: "This account has been disabled. Contact your hospital administrator.",
+      };
+    case "NO_FACILITY_ACCESS":
+    case "FACILITY_NOT_ASSIGNED":
+      return {
+        variant: "warning",
+        title: "No facility access",
+        text: "Your account is not assigned to an active facility. Contact your hospital administrator.",
+      };
+    case "TOO_MANY_REQUESTS":
+      return { variant: "warning", title: "Too many attempts", text: failure.message };
+    case "NETWORK_ERROR":
+      return { variant: "destructive", title: "Cannot reach the server", text: failure.message };
+    default:
+      return {
+        variant: "destructive",
+        title: "Sign-in failed",
+        text: failure?.message || "Unable to sign in. Please try again.",
+      };
+  }
+}
 
 function LoginForm() {
-  const { login } = useAuth();
+  const { login, isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = safeRedirectPath(searchParams.get("redirect"));
+  const requestedPath = searchParams.get("redirect");
+  const notice = REASON_NOTICES[searchParams.get("reason") ?? ""];
 
   const [showPassword, setShowPassword] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [formError, setFormError] = React.useState<string | null>(null);
+  const [failure, setFailure] = React.useState<ReturnType<typeof describeFailure> | null>(null);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { username: "", password: "", facility_id: FACILITY_OPTIONS[0]?.value },
+    defaultValues: { username: "", password: "" },
   });
 
-  const applyPreset = (username: string, password: string) => {
-    form.setValue("username", username);
-    form.setValue("password", password);
-    setFormError(null);
-  };
+  const destinationFor = React.useCallback(
+    (signedIn: AuthUser) =>
+      resolvePostLoginPath(requestedPath, (code) => signedIn.permissions.includes(code), {
+        devToolsEnabled: IS_DEV_BUILD,
+      }),
+    [requestedPath]
+  );
+
+  // Visiting /login while already signed in just continues to the workspace.
+  React.useEffect(() => {
+    if (!isLoading && isAuthenticated && user && !isSubmitting) {
+      router.replace(destinationFor(user));
+    }
+  }, [isLoading, isAuthenticated, user, isSubmitting, router, destinationFor]);
 
   const onSubmit = async (values: LoginFormValues) => {
     setIsSubmitting(true);
-    setFormError(null);
+    setFailure(null);
     try {
-      await login(values);
-      router.push(redirectTo);
+      const signedIn = await login({ username: values.username.trim(), password: values.password });
+      router.replace(destinationFor(signedIn));
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Unable to sign in. Please try again.");
-    } finally {
+      setFailure(describeFailure(error));
+      form.setValue("password", "");
       setIsSubmitting(false);
     }
   };
+
+  const checkingSession = isLoading;
 
   return (
     <div className="flex min-h-screen w-full bg-slate-50">
@@ -76,7 +119,9 @@ function LoginForm() {
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-[#04222b] text-white p-12 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] bg-size-[24px_24px]" />
         <div className="relative z-10">
-          <Logo variant="icon" size="lg" className="mb-10" />
+          <Link href="/" aria-label="ForaCare HIS home">
+            <Logo variant="icon" size="lg" className="mb-10" />
+          </Link>
           <h1 className="text-3xl font-bold tracking-tight leading-tight max-w-md">
             One Patient. One Record. Better Care.
           </h1>
@@ -88,7 +133,7 @@ function LoginForm() {
         <div className="relative z-10 space-y-3 text-xs text-slate-300">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-emerald-400" />
-            NABH / ISO 27001 / ABDM Ready
+            Authorised staff only. Activity is audited.
           </div>
           <p className="text-slate-500">&copy; {new Date().getFullYear()} ForaSoftware. All rights reserved.</p>
         </div>
@@ -98,49 +143,40 @@ function LoginForm() {
       <div className="flex w-full lg:w-1/2 items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-sm space-y-6">
           <div className="lg:hidden">
-            <Logo variant="full" size="md" />
+            <Link href="/" aria-label="ForaCare HIS home">
+              <Logo variant="full" size="md" />
+            </Link>
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-900">Sign in to your workspace</h2>
             <p className="text-sm text-slate-500 mt-1">Enter your staff credentials to continue.</p>
           </div>
 
-          {formError && (
-            <Alert variant="destructive">
-              <AlertDescription>{formError}</AlertDescription>
+          {notice && !failure && (
+            <Alert variant={notice.variant}>
+              <AlertDescription>{notice.text}</AlertDescription>
+            </Alert>
+          )}
+
+          {failure && (
+            <Alert variant={failure.variant} role="alert">
+              <AlertDescription>
+                <strong className="block">{failure.title}</strong>
+                {failure.text}
+              </AlertDescription>
             </Alert>
           )}
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="facility_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-1.5">
-                      <Building2 className="h-3.5 w-3.5" /> Hospital / Facility
-                    </FormLabel>
-                    <FormControl>
-                      <Select
-                        options={FACILITY_OPTIONS}
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Select a facility"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <FormField
                 control={form.control}
                 name="username"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Username or Email</FormLabel>
+                    <FormLabel htmlFor="login-username">Username or Email</FormLabel>
                     <FormControl>
-                      <Input autoComplete="username" placeholder="e.g. dr.priya" {...field} />
+                      <Input id="login-username" autoComplete="username" autoFocus disabled={checkingSession} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -152,58 +188,48 @@ function LoginForm() {
                 render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center justify-between">
-                      <FormLabel>Password</FormLabel>
+                      <FormLabel htmlFor="login-password">Password</FormLabel>
                       <Link href="/forgot-password" className="text-[11px] font-medium text-primary hover:underline">
                         Forgot password?
                       </Link>
                     </div>
-                    <FormControl>
-                      <div className="relative">
+                    <div className="relative">
+                      <FormControl>
                         <Input
+                          id="login-password"
                           type={showPassword ? "text" : "password"}
                           autoComplete="current-password"
                           className="pr-9"
+                          disabled={checkingSession}
                           {...field}
                         />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((prev) => !prev)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                          tabIndex={-1}
-                        >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </FormControl>
+                      </FormControl>
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? "Signing in..." : "Sign In"}
+              <Button type="submit" className="w-full" disabled={isSubmitting || checkingSession}>
+                {(isSubmitting || checkingSession) && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isSubmitting ? "Signing in..." : checkingSession ? "Checking session..." : "Sign In"}
               </Button>
             </form>
           </Form>
 
-          {SHOW_DEMO_LOGIN && (
-          <div className="pt-4 border-t border-slate-200">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              Quick Demo Role Switcher
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {DEMO_PRESETS.map((preset) => (
-                <button
-                  key={preset.username}
-                  type="button"
-                  onClick={() => applyPreset(preset.username, preset.password)}
-                  className="text-[11px] font-medium px-2.5 py-1 rounded-full border border-slate-200 bg-white text-slate-600 hover:border-primary hover:text-primary transition-colors"
-                >
-                  {ROLE_METADATA_MAP[preset.role].label}
-                </button>
-              ))}
-            </div>
-          </div>
-          )}
+          <p className="text-center text-xs text-slate-500">
+            New hospital or clinic?{" "}
+            <Link href="/request-onboarding" className="font-medium text-primary hover:underline">
+              Request onboarding
+            </Link>
+          </p>
         </div>
       </div>
     </div>

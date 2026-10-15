@@ -3,33 +3,26 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { UserRole } from "@/lib/constants";
 import { PageLoadingState } from "@/components/states/loading-state";
 
-interface AuthGuardProps {
-  children: React.ReactNode;
-  allowedRoles?: UserRole[];
-}
-
-export function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
-  const { isAuthenticated, isLoading, hasRole } = useAuth();
+/**
+ * Requires a signed-in user. Authorization is by permission and is enforced
+ * centrally by `RouteAccessGate` (lib/route-access.ts) plus the API itself -
+ * there are no per-page role lists.
+ */
+export function AuthGuard({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   React.useEffect(() => {
     if (isLoading) return;
-
     if (!isAuthenticated) {
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
-      return;
     }
+  }, [isLoading, isAuthenticated, router, pathname]);
 
-    if (!hasRole(allowedRoles)) {
-      router.replace("/forbidden");
-    }
-  }, [isLoading, isAuthenticated, hasRole, allowedRoles, router, pathname]);
-
-  if (isLoading || !isAuthenticated || !hasRole(allowedRoles)) {
+  if (isLoading || !isAuthenticated) {
     return <PageLoadingState label="Verifying session..." />;
   }
 

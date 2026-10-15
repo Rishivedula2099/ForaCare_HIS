@@ -109,10 +109,13 @@ class ApiClient {
                 status_code: 401,
                 request_id: requestId,
               };
-              this.redirectToLogin();
+              // The startup "who am I?" probe failing just means nobody is
+              // signed in - the route gate handles that without claiming an
+              // existing session expired.
+              if (!requestUrl.includes("/auth/me")) this.redirectToLogin();
               return Promise.reject(sessionExpiredError);
             }
-          } else if (!isAuthEndpoint) {
+          } else if (!isAuthEndpoint && !requestUrl.includes("/auth/me")) {
             // Refresh already attempted for this request (or nothing to
             // retry) - end the session.
             this.redirectToLogin();
@@ -166,7 +169,7 @@ class ApiClient {
   private redirectToLogin(): void {
     if (!window.location.pathname.startsWith("/login")) {
       // Avoid infinite redirect loop if already on login page
-      window.location.href = `/login?redirect=${encodeURIComponent(
+      window.location.href = `/login?reason=expired&redirect=${encodeURIComponent(
         window.location.pathname + window.location.search
       )}`;
     }

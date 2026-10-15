@@ -1,342 +1,180 @@
-"use client";
-
-import React from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Users,
-  CalendarClock,
   BedDouble,
-  Receipt,
+  Building2,
+  CalendarClock,
+  FileText,
   FlaskConical,
-  UserPlus,
-  Ticket,
-  PlusCircle,
+  Fingerprint,
+  Receipt,
+  ShieldCheck,
+  Stethoscope,
+  Users,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { AuthCta } from "@/components/public/auth-cta";
+import { PublicShell } from "@/components/public/public-shell";
+import { Button } from "@/components/ui/button";
 
-// Mock operational summary for baseline presentation
-const STATS = [
+export const metadata: Metadata = {
+  title: "ForaCare HIS | Hospital & clinic information system",
+  description:
+    "One system for patient registration, OPD, IPD, billing and the diagnostic laboratory - built for hospitals, clinics and multi-branch groups.",
+};
+
+const MODULES = [
   {
-    title: "OPD Today",
-    value: "148",
-    detail: "12 in consultation",
+    icon: Users,
+    title: "Patient 360",
+    text: "Register once, get a permanent patient UID, and see the whole history in one place.",
+  },
+  {
     icon: CalendarClock,
-    color: "text-teal-700 bg-teal-50",
+    title: "OPD & queue",
+    text: "Appointments and walk-ins, tokens with QR check-in, a live doctor queue, consultation and prescriptions.",
   },
   {
-    title: "IPD Occupancy",
-    value: "42 / 60",
-    detail: "70% bed utilization",
     icon: BedDouble,
-    color: "text-blue-700 bg-blue-50",
+    title: "IPD & beds",
+    text: "Wards, rooms and beds with a clear bed board, admissions, transfers, consent and discharge.",
   },
   {
-    title: "Pending Lab Orders",
-    value: "19",
-    detail: "6 awaiting pathologist approval",
-    icon: FlaskConical,
-    color: "text-amber-700 bg-amber-50",
-  },
-  {
-    title: "Today's Collections",
-    value: formatCurrency(184200),
-    detail: "Cashier Shift #1 Open",
     icon: Receipt,
-    color: "text-emerald-700 bg-emerald-50",
+    title: "Billing & payments",
+    text: "Service and package tariffs, invoices, deposits, payments, refunds and receipts.",
+  },
+  {
+    icon: FlaskConical,
+    title: "Laboratory",
+    text: "Orders, sample accessioning with barcodes, result entry, verification, approval and QR-verifiable reports.",
+  },
+  {
+    icon: FileText,
+    title: "Documents & printing",
+    text: "Versioned, facility-specific templates for tokens, receipts, consents, prescriptions and reports.",
+  },
+  {
+    icon: Fingerprint,
+    title: "ABHA / ABDM ready",
+    text: "An integration layer for ABHA verification and consent, kept separate from your core records.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Access control & audit",
+    text: "Role-based permissions, strict hospital separation, and an audit trail of sensitive actions.",
   },
 ];
 
-const RECENT_QUEUE = [
-  {
-    token: "CAR-014",
-    patientName: "Sunita Verma",
-    uid: "FC01-202609-000102",
-    doctor: "Dr. Priya Raman",
-    department: "Cardiology",
-    time: "10:15 AM",
-    status: "active",
-    statusLabel: "In Consultation",
-  },
-  {
-    token: "CAR-015",
-    patientName: "Rajesh Kumar",
-    uid: "FC01-202609-000105",
-    doctor: "Dr. Priya Raman",
-    department: "Cardiology",
-    time: "10:30 AM",
-    status: "waiting",
-    statusLabel: "Waiting",
-  },
-  {
-    token: "GEN-022",
-    patientName: "Ananya Sharma",
-    uid: "FC01-202609-000098",
-    doctor: "Dr. Vikram Seth",
-    department: "General Medicine",
-    time: "10:20 AM",
-    status: "completed",
-    statusLabel: "Completed",
-  },
-  {
-    token: "PED-008",
-    patientName: "Master Aarav Patel",
-    uid: "FC01-202609-000109",
-    doctor: "Dr. Meenakshi Iyer",
-    department: "Pediatrics",
-    time: "10:45 AM",
-    status: "waiting",
-    statusLabel: "Waiting",
-  },
+const AUDIENCES = [
+  { icon: Building2, title: "Hospitals", text: "OPD, IPD, diagnostics and billing under one roof." },
+  { icon: Stethoscope, title: "Clinics", text: "A lighter day-to-day workflow for outpatient practices." },
+  { icon: FlaskConical, title: "Diagnostic centres", text: "Sample-to-report workflow with barcode tracking." },
+  { icon: Users, title: "Multi-branch groups", text: "Several facilities, one organisation, separate records." },
 ];
 
-const ALERTS = [
-  {
-    count: 6,
-    title: "Lab orders awaiting approval",
-    subtitle: "Pathologist review required",
-    dotColor: "bg-rose-500",
-  },
-  {
-    count: 3,
-    title: "Patients awaiting admission",
-    subtitle: "Bed assignment required",
-    dotColor: "bg-orange-500",
-  },
-  {
-    count: 8,
-    title: "Pending discharge summaries",
-    subtitle: "Doctor action required",
-    dotColor: "bg-amber-500",
-  },
-  {
-    count: 2,
-    title: "Low-stock medical items",
-    subtitle: "Pharmacy inventory",
-    dotColor: "bg-blue-500",
-  },
+const STEPS = [
+  { n: "1", title: "Tell us about your facility", text: "Send an onboarding request with a few details about your hospital or clinic." },
+  { n: "2", title: "We set up your organisation", text: "Your hospital is created with its own facilities, and your administrator receives a secure activation link." },
+  { n: "3", title: "Your team signs in", text: "Your administrator sets a password, adds staff and roles, and configures departments, doctors and tariffs." },
 ];
 
-export default function HomePage() {
+export default function LandingPage() {
   return (
-    <AppShell>
-      <div className="space-y-6 max-w-7xl mx-auto">
-        {/* Top Operational Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <PublicShell>
+      {/* Hero */}
+      <section className="bg-linear-to-b from-teal-50 to-white">
+        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+            Hospital Information System
+          </p>
+          <h1 className="mt-3 max-w-3xl text-3xl font-bold leading-tight tracking-tight text-slate-900 sm:text-5xl">
+            One patient. One record. Better care.
+          </h1>
+          <p className="mt-5 max-w-2xl text-base text-slate-600">
+            ForaCare HIS brings registration, OPD, IPD, billing and the diagnostic laboratory
+            into one system, so every team works from the same, up-to-date record.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <AuthCta size="lg" />
+            <Button asChild size="lg" variant="outline">
+              <Link href="/request-onboarding">Request onboarding</Link>
+            </Button>
+            <Button asChild size="lg" variant="ghost">
+              <Link href="#modules">Explore the product</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Who it's for */}
+      <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
+        <h2 className="text-xl font-bold text-slate-900">Built for the way facilities really work</h2>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {AUDIENCES.map(({ icon: Icon, title, text }) => (
+            <div key={title} className="rounded-xl border border-slate-200 p-5">
+              <Icon className="h-5 w-5 text-primary" />
+              <h3 className="mt-3 text-sm font-semibold text-slate-900">{title}</h3>
+              <p className="mt-1 text-xs text-slate-600">{text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Modules */}
+      <section id="modules" className="scroll-mt-20 bg-slate-50">
+        <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
+          <h2 className="text-xl font-bold text-slate-900">What&apos;s in the box</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+            Each module works on its own and shares the same patient record. What a user sees
+            depends on the permissions their hospital gives them.
+          </p>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {MODULES.map(({ icon: Icon, title, text }) => (
+              <div key={title} className="rounded-xl border border-slate-200 bg-white p-5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="mt-3 text-sm font-semibold text-slate-900">{title}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">{text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Onboarding */}
+      <section id="onboarding" className="mx-auto w-full max-w-6xl scroll-mt-20 px-4 py-14 sm:px-6">
+        <h2 className="text-xl font-bold text-slate-900">Getting your facility onboarded</h2>
+        <ol className="mt-6 grid gap-4 md:grid-cols-3">
+          {STEPS.map((step) => (
+            <li key={step.n} className="rounded-xl border border-slate-200 p-5">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+                {step.n}
+              </span>
+              <h3 className="mt-3 text-sm font-semibold text-slate-900">{step.title}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600">{step.text}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {/* Closing call to action */}
+      <section className="bg-[#04222b] text-white">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-12 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              Hospital Operations Overview
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Live operational telemetry for ForaCare City Hospital (Main Branch)
+            <h2 className="text-xl font-bold">Ready to bring your facility onto ForaCare HIS?</h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Already onboarded? Sign in with the account your administrator created for you.
             </p>
           </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link href="/patients/new">
-              <Button size="sm" className="gap-1.5 shadow-xs bg-primary text-white hover:bg-primary/90">
-                <UserPlus className="w-3.5 h-3.5" />
-                Register Patient
-              </Button>
-            </Link>
-            <Button variant="outline" size="sm" className="gap-1.5 bg-white">
-              <Ticket className="w-3.5 h-3.5 text-primary" />
-              New OPD Token
+          <div className="flex flex-wrap gap-3">
+            <Button asChild variant="secondary" size="lg">
+              <Link href="/request-onboarding">Request onboarding</Link>
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5 bg-white">
-              <PlusCircle className="w-3.5 h-3.5 text-primary" />
-              Admit to IPD
-            </Button>
+            <AuthCta size="lg" />
           </div>
         </div>
-
-        {/* Telemetry Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {STATS.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={stat.title} className="shadow-xs border-slate-200">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-slate-500">
-                      {stat.title}
-                    </p>
-                    <div className="text-xl font-bold text-slate-900 tracking-tight">
-                      {stat.value}
-                    </div>
-                    <p className="text-[11px] text-slate-500">{stat.detail}</p>
-                  </div>
-                  <div
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center ${stat.color}`}
-                  >
-                    <Icon className="w-5 h-5" />
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Operational Modules Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* OPD Live Queue Table (2 Columns) */}
-          <Card className="lg:col-span-2 shadow-xs border-slate-200">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <div>
-                <CardTitle className="text-base">Live OPD Consultation Queue</CardTitle>
-                <CardDescription className="text-xs mt-0.5">
-                  Real-time outpatient tokens for active consulting rooms
-                </CardDescription>
-              </div>
-              <Button variant="outline" size="sm" className="text-xs h-8">
-                View Full Queue
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[100px]">Token</TableHead>
-                    <TableHead>Patient Details</TableHead>
-                    <TableHead>Physician</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {RECENT_QUEUE.map((row) => (
-                    <TableRow key={row.token}>
-                      <TableCell className="font-mono font-bold text-slate-900">
-                        {row.token}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium text-slate-900 leading-tight">
-                          {row.patientName}
-                        </div>
-                        <div className="text-[11px] font-mono text-slate-400">
-                          {row.uid}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-xs text-slate-800 font-medium">
-                          {row.doctor}
-                        </div>
-                        <div className="text-[10px] text-slate-500">
-                          {row.department}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-600">
-                        {row.time}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge
-                          variant={
-                            row.status as "active" | "waiting" | "completed"
-                          }
-                        >
-                          {row.statusLabel}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Quick Tasks & Ward Status (1 Column) */}
-          <div className="space-y-4">
-            <Card className="shadow-xs border-slate-200">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Ward Occupancy</CardTitle>
-                <CardDescription className="text-xs">
-                  Inpatient bed availability by department
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-xs">
-                <div>
-                  <div className="flex justify-between font-medium mb-1 text-slate-700">
-                    <span>ICU (Intensive Care)</span>
-                    <span className="font-semibold text-rose-600">9 / 10 Beds</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-rose-500 rounded-full w-[90%]" />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between font-medium mb-1 text-slate-700">
-                    <span>General Medical Ward</span>
-                    <span className="font-semibold text-slate-900">22 / 30 Beds</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-teal-600 rounded-full w-[73%]" />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between font-medium mb-1 text-slate-700">
-                    <span>Maternity & Neonatal</span>
-                    <span className="font-semibold text-slate-900">11 / 20 Beds</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full w-[55%]" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-xs border-slate-200">
-              <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <div>
-                  <CardTitle className="text-base">Alerts & Pending Actions</CardTitle>
-                  <CardDescription className="text-xs">
-                    Items requiring attention
-                  </CardDescription>
-                </div>
-                <Button variant="outline" size="sm" className="text-xs h-8">
-                  View All
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-3 text-xs">
-                {ALERTS.map((alert) => (
-                  <div
-                    key={alert.title}
-                    className="flex items-start gap-2.5 pb-2.5 border-b border-slate-100 last:border-0 last:pb-0"
-                  >
-                    <span
-                      className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${alert.dotColor}`}
-                    />
-                    <div className="space-y-0.5 min-w-0 flex-1">
-                      <div className="font-medium text-slate-800 leading-tight">
-                        <span className="font-semibold text-slate-900">
-                          {alert.count}
-                        </span>
-                        {" — "}
-                        {alert.title}
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        {alert.subtitle}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
-    </AppShell>
+      </section>
+    </PublicShell>
   );
 }
