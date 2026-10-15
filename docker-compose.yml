@@ -30,6 +30,18 @@ services:
       JWT_REFRESH_SECRET_KEY: local-dev-only-insecure-refresh-secret-change-me
       # ABDM credentials are never written here: set them in the host
       # environment (or an untracked .env next to this file).
+      # P10-B01: demo logins/patients exist only if this is explicitly true
+      # when the database is first migrated (local development only).
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      # P10-S01: believe X-Forwarded-For/Proto only from nginx on the compose network,
+      # so per-IP rate limits see the visitor, not the proxy.
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.16.0.0/12,192.168.0.0/16,10.0.0.0/8}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       ABDM_ADAPTER: ${ABDM_ADAPTER:-mock}
       ABDM_CLIENT_ID: ${ABDM_CLIENT_ID:-}
       ABDM_CLIENT_SECRET: ${ABDM_CLIENT_SECRET:-}

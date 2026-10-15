@@ -22,6 +22,7 @@ from app.modules.facilities import models as facilities_models  # noqa: F401
 from app.modules.ipd import models as ipd_models  # noqa: F401
 from app.modules.lab import models as lab_models  # noqa: F401
 from app.modules.opd import models as opd_models  # noqa: F401
+from app.modules.onboarding import models as onboarding_models  # noqa: F401
 from app.modules.otp import models as otp_models  # noqa: F401
 from app.modules.patients import models as patients_models  # noqa: F401
 from app.modules.rbac import models as rbac_models  # noqa: F401

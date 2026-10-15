@@ -20,6 +20,29 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=72)
 
 
+class PasswordResetRequest(BaseModel):
+    """Username or email of the account to recover."""
+
+    identifier: str = Field(min_length=1, max_length=255)
+
+
+class SetPasswordWithTokenRequest(BaseModel):
+    """Used by both password-reset confirmation and account activation."""
+
+    token: str = Field(min_length=20, max_length=200)
+    new_password: str = Field(min_length=8, max_length=72)
+
+
+class SwitchFacilityRequest(BaseModel):
+    facility_id: uuid.UUID
+
+
+class PasswordResetRequestedResponse(BaseModel):
+    requested: bool = True
+    # Local/dev only (no mail transport needed to test the flow); never set elsewhere.
+    debug_token: str | None = None
+
+
 class SessionMeta(BaseModel):
     """Non-secret session metadata returned alongside cookie-based tokens.
 
@@ -86,6 +109,8 @@ class LoginResponse(BaseModel):
     user: UserOut
     tenant: TenantOut
     facility: FacilityOut
+    # P10-B01: every facility the user holds a membership in (active first).
+    facilities: list[FacilityOut]
     session: SessionMeta
 
 
@@ -93,6 +118,7 @@ class MeResponse(BaseModel):
     user: UserOut
     tenant: TenantOut
     facility: FacilityOut
+    facilities: list[FacilityOut]
 
 
 class RequestEmailChangeRequest(BaseModel):

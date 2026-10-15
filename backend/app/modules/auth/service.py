@@ -7,9 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.exceptions import UnauthorizedError
+from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import create_token, decode_token, hash_password, hash_token_jti, verify_password
-from app.modules.auth.models import User, UserSession
+from app.modules.auth.models import User, UserFacilityMembership, UserSession
+from app.modules.facilities.models import Facility
+from app.modules.tenants.models import Tenant
 from app.modules.otp import service as otp_service
 
 
@@ -38,15 +40,24 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
         raise _login_failure("Invalid username or password.", "bad_password", user)
 
     if not user.is_active:
-        raise _login_failure("This account is inactive. Contact your administrator.", "inactive_account", user)
+        # Only reachable after the correct password, so the distinct code
+        # does not let a stranger enumerate accounts.
+        raise _login_failure(
+            "This account is disabled. Contact your administrator.",
+            "inactive_account",
+            user,
+            code="ACCOUNT_DISABLED",
+        )
 
     return user
 
 
-def _login_failure(message: str, reason: str, user: User | None = None) -> UnauthorizedError:
+def _login_failure(
+    message: str, reason: str, user: User | None = None, *, code: str | None = None
+) -> UnauthorizedError:
     """The caller (API layer) audits the failure from `audit_reason`/`audit_user`;
     the HTTP message stays generic so it can't be used to enumerate accounts."""
-    error = UnauthorizedError(message)
+    error = UnauthorizedError(message, code=code)
     error.audit_reason = reason  # type: ignore[attr-defined]
     error.audit_user = user  # type: ignore[attr-defined]
     return error
@@ -73,8 +84,61 @@ async def record_login_failure(
     )
 
 
+async def list_user_facilities(db: AsyncSession, user: User) -> list[Facility]:
+    """Active facilities the user holds a membership in (default first)."""
+    result = await db.execute(
+        select(Facility)
+        .join(UserFacilityMembership, UserFacilityMembership.facility_id == Facility.id)
+        .where(
+            UserFacilityMembership.user_id == user.id,
+            Facility.tenant_id == user.tenant_id,
+            Facility.is_active.is_(True),
+        )
+        .order_by(UserFacilityMembership.is_default.desc(), Facility.name)
+    )
+    return list(result.scalars().all())
+
+
+async def _require_active_tenant(db: AsyncSession, user: User) -> None:
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))).scalar_one_or_none()
+    if tenant is None or not tenant.is_active:
+        raise _login_failure(
+            "This hospital account is disabled. Contact your administrator.",
+            "inactive_tenant",
+            user,
+            code="ACCOUNT_DISABLED",
+        )
+
+
+async def resolve_login_facility(
+    db: AsyncSession, user: User, requested_facility_id: uuid.UUID | None
+) -> tuple[Facility, list[Facility]]:
+    """Picks the session's active facility from the user's memberships.
+    Returns (active, all_available)."""
+    await _require_active_tenant(db, user)
+    facilities = await list_user_facilities(db, user)
+    if not facilities:
+        raise _login_failure(
+            "No active facility is assigned to this account. Contact your administrator.",
+            "no_facility",
+            user,
+            code="NO_FACILITY_ACCESS",
+        )
+    if requested_facility_id is None:
+        return facilities[0], facilities
+    for facility in facilities:
+        if facility.id == requested_facility_id:
+            return facility, facilities
+    raise ForbiddenError("You do not have access to that facility.", code="FACILITY_NOT_ASSIGNED")
+
+
 async def issue_tokens(
-    db: AsyncSession, user: User, *, ip_address: str | None, user_agent: str | None
+    db: AsyncSession,
+    user: User,
+    *,
+    facility_id: uuid.UUID,
+    ip_address: str | None,
+    user_agent: str | None,
 ) -> IssuedTokens:
     settings = get_settings()
     now = datetime.now(timezone.utc)
@@ -85,7 +149,7 @@ async def issue_tokens(
         sub=str(user.id),
         sid=session_id,
         tenant_id=str(user.tenant_id),
-        facility_id=str(user.facility_id),
+        facility_id=str(facility_id),
         role=user.role.code,
     )
     refresh_token, refresh_jti, refresh_expires_at = create_token(
@@ -93,14 +157,14 @@ async def issue_tokens(
         sub=str(user.id),
         sid=session_id,
         tenant_id=str(user.tenant_id),
-        facility_id=str(user.facility_id),
+        facility_id=str(facility_id),
         role=user.role.code,
     )
 
     session = UserSession(
         id=uuid.UUID(session_id),
         user_id=user.id,
-        facility_id=user.facility_id,
+        facility_id=facility_id,
         refresh_token_jti_hash=hash_token_jti(refresh_jti),
         family_id=uuid.UUID(session_id),
         created_at=now,
@@ -201,13 +265,16 @@ async def rotate_session(
     if user is None or not user.is_active:
         raise UnauthorizedError("Account is no longer active.")
 
-    settings = get_settings()
+    # The session keeps its active facility across rotations, but only while
+    # the membership (and facility/tenant) is still valid.
+    await require_session_facility_access(db, user, session.facility_id)
+
     new_access_token, _, access_expires_at = create_token(
         token_type="access",
         sub=str(user.id),
         sid=str(session.id),
         tenant_id=str(user.tenant_id),
-        facility_id=str(user.facility_id),
+        facility_id=str(session.facility_id),
         role=user.role.code,
     )
     new_refresh_token, new_refresh_jti, _ = create_token(
@@ -215,7 +282,7 @@ async def rotate_session(
         sub=str(user.id),
         sid=str(session.id),
         tenant_id=str(user.tenant_id),
-        facility_id=str(user.facility_id),
+        facility_id=str(session.facility_id),
         role=user.role.code,
     )
 
@@ -228,6 +295,64 @@ async def rotate_session(
     return IssuedTokens(
         access_token=new_access_token,
         refresh_token=new_refresh_token,
+        access_expires_at=access_expires_at,
+        refresh_expires_at=session.expires_at,
+    )
+
+
+async def require_session_facility_access(db: AsyncSession, user: User, facility_id: uuid.UUID) -> None:
+    """Raises UnauthorizedError unless `facility_id` is still an active
+    facility of the user's tenant that the user holds a membership in, and
+    the tenant itself is active."""
+    row = (
+        await db.execute(
+            select(Tenant.is_active, Facility.is_active)
+            .select_from(UserFacilityMembership)
+            .join(Facility, Facility.id == UserFacilityMembership.facility_id)
+            .join(Tenant, Tenant.id == Facility.tenant_id)
+            .where(
+                UserFacilityMembership.user_id == user.id,
+                UserFacilityMembership.facility_id == facility_id,
+                Facility.tenant_id == user.tenant_id,
+            )
+        )
+    ).first()
+    if row is None or not row[0] or not row[1]:
+        raise UnauthorizedError("Your access to this facility has ended. Please sign in again.")
+
+
+async def switch_facility(
+    db: AsyncSession, user: User, session: UserSession, facility_id: uuid.UUID
+) -> IssuedTokens:
+    """Re-points the current session at another facility the user belongs to
+    and re-issues the cookie pair (fresh jti, same session lineage)."""
+    facilities = await list_user_facilities(db, user)
+    if not any(facility.id == facility_id for facility in facilities):
+        raise ForbiddenError("You do not have access to that facility.", code="FACILITY_NOT_ASSIGNED")
+
+    access_token, _, access_expires_at = create_token(
+        token_type="access",
+        sub=str(user.id),
+        sid=str(session.id),
+        tenant_id=str(user.tenant_id),
+        facility_id=str(facility_id),
+        role=user.role.code,
+    )
+    refresh_token, refresh_jti, _ = create_token(
+        token_type="refresh",
+        sub=str(user.id),
+        sid=str(session.id),
+        tenant_id=str(user.tenant_id),
+        facility_id=str(facility_id),
+        role=user.role.code,
+    )
+    session.facility_id = facility_id
+    session.refresh_token_jti_hash = hash_token_jti(refresh_jti)
+    session.last_used_at = datetime.now(timezone.utc)
+    await db.commit()
+    return IssuedTokens(
+        access_token=access_token,
+        refresh_token=refresh_token,
         access_expires_at=access_expires_at,
         refresh_expires_at=session.expires_at,
     )

@@ -25,8 +25,15 @@ out/
 .env.*.local
 .env.*
 !.env.example
+!.env.*.example
 *.pem
 *.key
+
+# P10-S01: deployment secrets and TLS material, uploaded patient files (PHI)
+secrets/
+tls/
+.env.production
+backend/storage/
 
 # Logs
 *.log

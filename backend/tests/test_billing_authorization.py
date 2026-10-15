@@ -208,6 +208,16 @@ def no_billing_role_user(client):
                     "role_id": role_id,
                 },
             )
+            # P10-B01: a user can only sign in to a facility they hold a membership in.
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO user_facility_memberships (id, user_id, facility_id, is_default, created_at)
+                    VALUES (gen_random_uuid(), :user_id, :facility_id, true, now())
+                    """
+                ),
+                {"user_id": user_id, "facility_id": FACILITY_MAIN_ID},
+            )
 
     async def teardown():
         async with setup_engine.begin() as conn:
@@ -217,6 +227,7 @@ def no_billing_role_user(client):
             # - both reference this user and must go before it's deleted.
             await conn.execute(text("DELETE FROM user_sessions WHERE user_id = :id"), {"id": user_id})
             await conn.execute(text("DELETE FROM audit_logs WHERE actor_user_id = :id"), {"id": user_id})
+            await conn.execute(text("DELETE FROM user_facility_memberships WHERE user_id = :id"), {"id": user_id})
             await conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
             await conn.execute(text("DELETE FROM roles WHERE id = :id"), {"id": role_id})
         await setup_engine.dispose()

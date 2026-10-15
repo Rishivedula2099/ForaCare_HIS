@@ -1,0 +1,157 @@
+# P10-S01: production topology. Use INSTEAD of docker-compose.yml:
+#
+#   python backend/scripts/generate_secrets.py            # once -> ./secrets/*
+#   cp .env.production.example .env.production           # edit: domain, origins
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Differences from the development stack:
+#   * every credential is a Docker secret file mounted at /run/secrets (never an
+#     environment variable, never in this file, never in `docker inspect`)
+#   * required settings use ${VAR:?} - compose refuses to start if one is missing
+#   * ENVIRONMENT=production, so the API itself refuses to boot on unsafe values
+#     (see Settings.production_config_problems)
+#   * only nginx publishes ports: 443 (TLS) and 80 (redirect + ACME)
+#   * no demo data, no dev passwords, no mock-auth
+
+name: foracare_his_prod
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  networks: [his]
+
+services:
+  postgres:
+    <<: *hardening
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-his_app}
+      POSTGRES_DB: ${POSTGRES_DB:-his}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - his_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-his_app} -d ${POSTGRES_DB:-his}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    <<: *hardening
+    build:
+      context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DB_ECHO: "false"
+      SEED_DEMO_DATA: "false"
+      RATE_LIMIT_ENABLED: "true"
+      LOG_JSON: "true"
+      SECRETS_DIR: /run/secrets
+      FILE_STORAGE_ROOT: /app/storage
+      # Public identity of the site. All https, all required.
+      PUBLIC_BASE_URL: https://${HIS_DOMAIN:?set HIS_DOMAIN in .env.production}
+      FRONTEND_BASE_URL: https://${HIS_DOMAIN}
+      CORS_ORIGINS: https://${HIS_DOMAIN}
+      ALLOWED_HOSTS: ${HIS_DOMAIN},localhost   # localhost: the container healthcheck
+      # Only nginx (on this network) may vouch for client IP / HTTPS.
+      TRUSTED_PROXY_CIDRS: ${HIS_NETWORK_SUBNET:-172.30.88.0/24}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      ABDM_ADAPTER: ${ABDM_ADAPTER:-mock}
+      ABDM_CLIENT_ID: ${ABDM_CLIENT_ID:-}
+    secrets:
+      - database_url
+      - jwt_access_secret_key
+      - jwt_refresh_secret_key
+      - qr_signing_secret_key
+      - smtp_password
+      - abdm_client_secret
+    volumes:
+      - his_file_storage:/app/storage
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --no-access-log --no-proxy-headers"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    <<: *hardening
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: /api/v1
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  nginx:
+    <<: *hardening
+    image: nginx:1.27-alpine
+    environment:
+      HIS_DOMAIN: ${HIS_DOMAIN}
+      NGINX_ENVSUBST_FILTER: ^HIS_DOMAIN$$
+    ports:
+      - "${HIS_HTTP_PORT:-80}:80"
+      - "${HIS_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./infra/nginx/prod/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./infra/nginx/prod/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - ./infra/nginx/prod/trusted_proxies.conf:/etc/nginx/trusted_proxies.conf:ro
+      # fullchain.pem + privkey.pem (Let's Encrypt, or your CA). Never committed.
+      - ${HIS_TLS_DIR:?set HIS_TLS_DIR to the directory holding fullchain.pem and privkey.pem}:/etc/nginx/tls:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "--no-check-certificate", "https://127.0.0.1/api/v1/health", "--header=Host: ${HIS_DOMAIN}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+networks:
+  his:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${HIS_NETWORK_SUBNET:-172.30.88.0/24}
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  database_url:
+    file: ./secrets/database_url
+  jwt_access_secret_key:
+    file: ./secrets/jwt_access_secret_key
+  jwt_refresh_secret_key:
+    file: ./secrets/jwt_refresh_secret_key
+  qr_signing_secret_key:
+    file: ./secrets/qr_signing_secret_key
+  smtp_password:
+    file: ./secrets/smtp_password
+  abdm_client_secret:
+    file: ./secrets/abdm_client_secret
+
+volumes:
+  his_postgres_data:
+  his_file_storage:

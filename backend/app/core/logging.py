@@ -109,6 +109,7 @@ def configure_logging(settings: Settings) -> None:
             [
                 settings.abdm_client_secret.get_secret_value(),
                 settings.abdm_client_id,
+                settings.smtp_password.get_secret_value(),
                 settings.jwt_access_secret_key,
                 settings.jwt_refresh_secret_key,
                 settings.qr_signing_secret_key,

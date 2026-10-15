@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import Depends, Request
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,7 +29,7 @@ async def authenticate_by_access_token(access_token: str | None, db: AsyncSessio
     if not access_token:
         raise UnauthorizedError("Not authenticated.")
 
-    claims, _session = await auth_service.get_session_for_access_token(db, access_token)
+    claims, session = await auth_service.get_session_for_access_token(db, access_token)
 
     try:
         user_id = uuid.UUID(claims["sub"])
@@ -44,6 +45,13 @@ async def authenticate_by_access_token(access_token: str | None, db: AsyncSessio
 
     if user is None or not user.is_active:
         raise UnauthorizedError("Account is no longer active.")
+
+    # P10-B01: the active facility is the one the *session* was opened for
+    # (a user can belong to several), and it must still be a valid membership.
+    # `set_committed_value` overrides the in-memory attribute without marking
+    # the user dirty, so a later commit never rewrites the user's home facility.
+    await auth_service.require_session_facility_access(db, user, session.facility_id)
+    set_committed_value(user, "facility_id", session.facility_id)
 
     set_tenant_context(tenant_id=user.tenant_id, facility_id=user.facility_id, actor_user_id=user.id)
 

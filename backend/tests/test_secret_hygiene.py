@@ -9,6 +9,7 @@ import pytest
 
 from app.core.config import Settings
 from app.core.logging import SecretRedactionFilter
+from tests.prod_settings import prod_kwargs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -24,7 +25,7 @@ def _tracked_files() -> list[str]:
 
 def test_no_env_file_is_tracked_except_the_example():
     env_files = [f for f in _tracked_files() if Path(f).name.startswith(".env")]
-    assert all(Path(f).name == ".env.example" for f in env_files), env_files
+    assert all(Path(f).name.endswith(".example") for f in env_files), env_files
 
 
 def test_env_example_has_no_abdm_credential_values():
@@ -54,13 +55,7 @@ def test_settings_repr_masks_the_abdm_secret():
 def test_non_local_environment_rejects_public_dev_secrets():
     with pytest.raises(ValueError, match="JWT_ACCESS_SECRET_KEY"):
         Settings(environment="production", _env_file=None)
-    Settings(
-        environment="production",
-        jwt_access_secret_key="a" * 40,
-        jwt_refresh_secret_key="b" * 40,
-        qr_signing_secret_key="c" * 40,
-        _env_file=None,
-    )
+    Settings(**prod_kwargs())
 
 
 def test_redaction_filter_masks_configured_credentials(caplog):
