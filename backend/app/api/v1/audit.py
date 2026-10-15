@@ -30,6 +30,9 @@ async def list_audit_logs(
         limit=limit,
         offset=offset,
     )
+    await service.record_view(
+        db, action="audit.logs_viewed", resource_type="audit_log", resource_id=current_user.tenant_id
+    )
     return success_response(
         [log.model_dump(mode="json") for log in logs],
         request_id=getattr(request.state, "request_id", None),

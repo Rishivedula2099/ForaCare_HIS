@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.permissions import ensure_same_facility, ensure_same_tenant
+from app.core.sql import LIKE_ESCAPE, like_contains
 from app.modules.audit import service as audit_service
 from app.modules.auth.models import User
 from app.modules.billing.models import (
@@ -253,7 +254,7 @@ async def list_services(
         Service.tenant_id == current_user.tenant_id, Service.facility_id == current_user.facility_id
     )
     if name:
-        stmt = stmt.where(Service.name.ilike(f"%{name}%"))
+        stmt = stmt.where(Service.name.ilike(like_contains(name), escape=LIKE_ESCAPE))
     if is_active is not None:
         stmt = stmt.where(Service.is_active == is_active)
     stmt = stmt.order_by(Service.name)
@@ -349,7 +350,7 @@ async def list_packages(
         Package.tenant_id == current_user.tenant_id, Package.facility_id == current_user.facility_id
     )
     if name:
-        stmt = stmt.where(Package.name.ilike(f"%{name}%"))
+        stmt = stmt.where(Package.name.ilike(like_contains(name), escape=LIKE_ESCAPE))
     if is_active is not None:
         stmt = stmt.where(Package.is_active == is_active)
     stmt = stmt.order_by(Package.name)

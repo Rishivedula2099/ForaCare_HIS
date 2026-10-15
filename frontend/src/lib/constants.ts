@@ -8,6 +8,15 @@ export const APP_VERSION = "0.1.0-alpha";
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+/**
+ * P9-F02: the offline mock-auth fallback and demo role switcher embed demo
+ * credentials, so they exist only outside production builds unless explicitly
+ * enabled. Never set NEXT_PUBLIC_ENABLE_DEMO_LOGIN on a real deployment.
+ */
+export const MOCK_AUTH_ENABLED =
+  process.env.NODE_ENV !== "production" ||
+  process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === "true";
+
 export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
   HOSPITAL_ADMIN: "HOSPITAL_ADMIN",

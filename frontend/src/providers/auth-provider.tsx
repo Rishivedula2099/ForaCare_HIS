@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
+import { MOCK_AUTH_ENABLED, UserRole } from "@/lib/constants";
 import { findFacilityById, MOCK_FACILITIES, mockLogin } from "@/lib/auth-mock";
-import { UserRole } from "@/lib/constants";
 import { ApiError } from "@/types/api";
 import {
   adaptBackendUser,
@@ -81,13 +82,17 @@ function readStoredMockSession(): StoredMockSession | null {
   }
 }
 
+// In production an unreachable backend must surface as an error, never as a
+// silent downgrade to client-side mock credentials.
 function isNetworkError(error: unknown): boolean {
+  if (!MOCK_AUTH_ENABLED) return false;
   const apiError = error as Partial<ApiError>;
   return apiError?.code === "NETWORK_ERROR" || apiError?.code === "TIMEOUT";
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [user, setUser] = React.useState<AuthUser | null>(null);
@@ -159,13 +164,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     clearMockSession();
+    // Drop every cached response: the next person on this browser must not
+    // see the previous user's patient/billing/lab data (P9-F03).
+    queryClient.clear();
     setUser(null);
     setTenant(null);
     setFacility(null);
     setIsUsingMockAuth(false);
     setSessionTimeout({ isWarningVisible: false, secondsRemaining: IDLE_WARNING_MS / 1000 });
     router.push("/login");
-  }, [isUsingMockAuth, router]);
+  }, [isUsingMockAuth, router, queryClient]);
 
   const login = React.useCallback(async (credentials: LoginCredentials) => {
     let session: AuthSession;
@@ -199,17 +207,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       clearMockSession();
     }
+    // A different user (role/permissions/tenant) may sign in on top of a
+    // previous session's cache - start clean.
+    queryClient.clear();
     setUser(session.user);
     setTenant(session.tenant);
     setFacility(session.facility);
     setIsUsingMockAuth(usedMock);
     lastActivityRef.current = Date.now();
-  }, []);
+  }, [queryClient]);
 
   const switchFacility = React.useCallback(
     (facilityId: string) => {
+      if (!isUsingMockAuth) {
+        // The facility lives in the server session; relabelling the UI would
+        // show one facility while every API call still serves another.
+        toast({
+          title: "Facility is fixed for this account",
+          description: "Sign in with an account that belongs to that facility.",
+          variant: "info",
+        });
+        return;
+      }
       const target = findFacilityById(facilityId) ?? MOCK_FACILITIES.find((f) => f.id === facilityId);
       if (!target) return;
+      queryClient.clear(); // facility-scoped data must not carry over
       setFacility(target);
       if (isUsingMockAuth) {
         const stored = readStoredMockSession();
@@ -224,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       toast({ title: "Facility switched", description: target.name, variant: "info" });
     },
-    [isUsingMockAuth, toast]
+    [isUsingMockAuth, toast, queryClient]
   );
 
   const changePassword = React.useCallback(
@@ -309,7 +331,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     tenant,
     facility,
-    availableFacilities: MOCK_FACILITIES,
+    // A real session is bound to one facility server-side; only the offline
+    // mock can pretend to be elsewhere (P9-F04).
+    availableFacilities: isUsingMockAuth ? MOCK_FACILITIES : facility ? [facility] : [],
     isAuthenticated: !!user,
     isLoading,
     isUsingMockAuth,

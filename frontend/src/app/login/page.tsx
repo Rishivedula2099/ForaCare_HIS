@@ -16,6 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
 import { DEMO_PRESETS, MOCK_FACILITIES } from "@/lib/auth-mock";
+import { MOCK_AUTH_ENABLED } from "@/lib/constants";
+import { safeRedirectPath } from "@/lib/safe-redirect";
+
+// P9-F01: the one-click demo credentials are a development aid only.
+const SHOW_DEMO_LOGIN = MOCK_AUTH_ENABLED;
 import { ROLE_METADATA_MAP } from "@/types/auth";
 
 const loginSchema = z.object({
@@ -35,7 +40,7 @@ function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") || "/";
+  const redirectTo = safeRedirectPath(searchParams.get("redirect"));
 
   const [showPassword, setShowPassword] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -180,6 +185,7 @@ function LoginForm() {
             </form>
           </Form>
 
+          {SHOW_DEMO_LOGIN && (
           <div className="pt-4 border-t border-slate-200">
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
               Quick Demo Role Switcher
@@ -197,6 +203,7 @@ function LoginForm() {
               ))}
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

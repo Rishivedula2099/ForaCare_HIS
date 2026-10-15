@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.exceptions import AppError, ConflictError, ForbiddenError, NotFoundError
 from app.core.permissions import ensure_same_facility, ensure_same_tenant
+from app.core.sql import LIKE_ESCAPE, like_contains
 from app.modules.audit import service as audit_service
 from app.modules.auth.models import User
 from app.modules.doctors.models import Doctor
@@ -73,7 +74,7 @@ async def list_tests(
         Test.tenant_id == current_user.tenant_id, Test.facility_id == current_user.facility_id
     )
     if name:
-        stmt = stmt.where(Test.name.ilike(f"%{name}%"))
+        stmt = stmt.where(Test.name.ilike(like_contains(name), escape=LIKE_ESCAPE))
     if is_active is not None:
         stmt = stmt.where(Test.is_active == is_active)
     stmt = stmt.order_by(Test.name)

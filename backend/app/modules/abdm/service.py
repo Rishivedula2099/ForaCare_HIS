@@ -111,6 +111,14 @@ async def verify(
     try:
         profile = await get_abdm_adapter().verify_otp(transaction_id=transaction_id, otp=otp)
     except AbdmError as exc:
+        await db.rollback()
+        await audit_service.record_event(
+            db,
+            action="abha.verification_failed",
+            resource_type="patient",
+            resource_id=patient_id,
+            after={"error_code": exc.code},
+        )
         raise _gateway_error(exc) from exc
 
     in_use = (

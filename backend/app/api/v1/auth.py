@@ -7,6 +7,7 @@ from app.core.cookies import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME, clear_auth
 from app.core.database import get_db
 from app.core.exceptions import NotFoundError, UnauthorizedError
 from app.core.permissions import get_current_user
+from app.core.rate_limit import check_rate_limit, client_ip, rate_limit
 from app.core.responses import ApiResponse, success_response
 from app.modules.audit import service as audit_service
 from app.modules.auth import service
@@ -29,6 +30,12 @@ from app.modules.facilities.models import Facility
 from app.modules.tenants.models import Tenant
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# P9-B01: brute-force / abuse guards. Evaluated at import so the limits come
+# from settings; per-IP for every route, plus per-username on login below.
+_settings = get_settings()
+_limit_refresh = rate_limit("auth-refresh", limit=_settings.rate_limit_login_per_minute * 3)
+_limit_sensitive = rate_limit("auth-sensitive", limit=_settings.rate_limit_sensitive_per_minute)
 
 
 async def _find_linked_doctor_id(db: AsyncSession, user: User):
@@ -58,7 +65,17 @@ def _client_meta(request: Request) -> tuple[str | None, str | None]:
 async def login(
     payload: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)
 ):
-    user = await service.authenticate_user(db, payload.username, payload.password)
+    limit = get_settings().rate_limit_login_per_minute
+    check_rate_limit(f"login-ip:{client_ip(request)}", limit=limit * 3, window_seconds=60)
+    # Per-account budget stops a distributed guess against one username.
+    check_rate_limit(f"login-user:{payload.username.lower()}", limit=limit, window_seconds=60)
+    try:
+        user = await service.authenticate_user(db, payload.username, payload.password)
+    except UnauthorizedError as exc:
+        await service.record_login_failure(
+            db, payload.username, exc, ip_address=client_ip(request)
+        )
+        raise
     tenant, facility = await _load_context(db, user)
 
     ip_address, user_agent = _client_meta(request)
@@ -99,7 +116,8 @@ async def login(
 
 
 @router.post(
-    "/refresh", response_model=ApiResponse, summary="Rotate the session's refresh cookie for a new pair"
+    "/refresh", response_model=ApiResponse, summary="Rotate the session's refresh cookie for a new pair",
+    dependencies=[Depends(_limit_refresh)],
 )
 async def refresh(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     raw_refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
@@ -194,7 +212,12 @@ async def me(
     )
 
 
-@router.post("/change-password", response_model=ApiResponse, summary="Change the current user's password")
+@router.post(
+    "/change-password",
+    response_model=ApiResponse,
+    summary="Change the current user's password",
+    dependencies=[Depends(_limit_sensitive)],
+)
 async def change_password(
     payload: ChangePasswordRequest,
     request: Request,
@@ -215,7 +238,8 @@ async def change_password(
 
 
 @router.post(
-    "/email/change/request", response_model=ApiResponse, summary="Request an OTP to change account email"
+    "/email/change/request", response_model=ApiResponse, summary="Request an OTP to change account email",
+    dependencies=[Depends(_limit_sensitive)],
 )
 async def request_email_change(
     payload: RequestEmailChangeRequest,
@@ -234,7 +258,8 @@ async def request_email_change(
 
 
 @router.post(
-    "/email/change/verify", response_model=ApiResponse, summary="Verify OTP and apply the new email"
+    "/email/change/verify", response_model=ApiResponse, summary="Verify OTP and apply the new email",
+    dependencies=[Depends(_limit_sensitive)],
 )
 async def verify_email_change(
     payload: VerifyEmailChangeRequest,
@@ -243,7 +268,17 @@ async def verify_email_change(
     current_user: User = Depends(get_current_user),
 ):
     before_email = current_user.email
-    await service.verify_email_change(db, current_user, payload.new_email, payload.code)
+    try:
+        await service.verify_email_change(db, current_user, payload.new_email, payload.code)
+    except UnauthorizedError:
+        await audit_service.record_event(
+            db,
+            action="auth.otp.verification_failed",
+            resource_type="user",
+            resource_id=current_user.id,
+            after={"purpose": "email_change"},
+        )
+        raise
     await audit_service.record_event(
         db,
         action="auth.email_changed",
@@ -259,7 +294,8 @@ async def verify_email_change(
 
 
 @router.post(
-    "/phone/change/request", response_model=ApiResponse, summary="Request an OTP to change account phone"
+    "/phone/change/request", response_model=ApiResponse, summary="Request an OTP to change account phone",
+    dependencies=[Depends(_limit_sensitive)],
 )
 async def request_phone_change(
     payload: RequestPhoneChangeRequest,
@@ -278,7 +314,8 @@ async def request_phone_change(
 
 
 @router.post(
-    "/phone/change/verify", response_model=ApiResponse, summary="Verify OTP and apply the new phone number"
+    "/phone/change/verify", response_model=ApiResponse, summary="Verify OTP and apply the new phone number",
+    dependencies=[Depends(_limit_sensitive)],
 )
 async def verify_phone_change(
     payload: VerifyPhoneChangeRequest,
@@ -287,7 +324,17 @@ async def verify_phone_change(
     current_user: User = Depends(get_current_user),
 ):
     before_phone = current_user.phone
-    await service.verify_phone_change(db, current_user, payload.new_phone, payload.code)
+    try:
+        await service.verify_phone_change(db, current_user, payload.new_phone, payload.code)
+    except UnauthorizedError:
+        await audit_service.record_event(
+            db,
+            action="auth.otp.verification_failed",
+            resource_type="user",
+            resource_id=current_user.id,
+            after={"purpose": "phone_change"},
+        )
+        raise
     await audit_service.record_event(
         db,
         action="auth.phone_changed",

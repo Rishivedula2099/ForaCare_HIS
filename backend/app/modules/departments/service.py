@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.permissions import ensure_same_facility, ensure_same_tenant
+from app.core.sql import LIKE_ESCAPE, like_contains
 from app.modules.audit import service as audit_service
 from app.modules.auth.models import User
 from app.modules.departments.models import Department
@@ -23,7 +24,7 @@ async def list_departments(
         Department.facility_id == current_user.facility_id,
     )
     if name:
-        stmt = stmt.where(Department.name.ilike(f"%{name}%"))
+        stmt = stmt.where(Department.name.ilike(like_contains(name), escape=LIKE_ESCAPE))
     stmt = stmt.order_by(Department.name)
 
     result = await db.execute(stmt)

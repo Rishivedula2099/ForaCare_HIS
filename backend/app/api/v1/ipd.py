@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.permissions import require_permissions
 from app.core.responses import ApiResponse, success_response
 from app.modules.auth.models import User
+from app.modules.audit import service as audit_service
 from app.modules.ipd import service
 from app.modules.ipd.schemas import (
     AdmissionCreateRequest,
@@ -206,6 +207,9 @@ async def get_admission(
     current_user: User = Depends(require_permissions("ipd.view")),
 ):
     admission = await service.get_admission(db, admission_id, current_user)
+    await audit_service.record_view(
+        db, action="ipd.admission_viewed", resource_type="admission", resource_id=admission_id
+    )
     return success_response(
         admission.model_dump(mode="json"), request_id=getattr(request.state, "request_id", None)
     )

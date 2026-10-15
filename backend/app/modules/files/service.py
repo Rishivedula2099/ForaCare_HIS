@@ -14,6 +14,13 @@ ALLOWED_CONTENT_TYPES: dict[str, str] = {
 }
 
 
+_FORMAT_TO_CONTENT_TYPE = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
+
+# Pillow warns at ~89M pixels and errors at twice that; make a decompression
+# bomb fail fast at a sane clinical-photo ceiling instead.
+Image.MAX_IMAGE_PIXELS = 40_000_000
+
+
 class UnsupportedFileTypeError(AppError):
     status_code = 415
     code = "UNSUPPORTED_FILE_TYPE"
@@ -60,15 +67,23 @@ def validate_and_store_photo(
     max_bytes = get_settings().file_upload_max_bytes
     if len(raw_bytes) > max_bytes:
         raise FileTooLargeError(f"File exceeds the {max_bytes // (1024 * 1024)}MB upload limit.")
+    if not raw_bytes:
+        raise InvalidFileContentError("The uploaded file is empty.")
 
     # Decode the actual bytes (not just the declared content-type) so a
     # renamed/spoofed file is rejected rather than trusted.
     try:
         image = Image.open(io.BytesIO(raw_bytes))
+        detected_format = image.format
         image.verify()
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise InvalidFileContentError("The uploaded file is not a valid image.") from exc
 
+    # The stored type must be what the bytes really are, not what the client
+    # claimed - otherwise a PNG labelled image/jpeg would be served as such.
+    if detected_format not in _FORMAT_TO_CONTENT_TYPE:
+        raise UnsupportedFileTypeError(f"Unsupported image format '{detected_format}'.")
+    content_type = _FORMAT_TO_CONTENT_TYPE[detected_format]
     extension = ALLOWED_CONTENT_TYPES[content_type]
     directory = _patient_dir(tenant_id, facility_id, patient_id)
     directory.mkdir(parents=True, exist_ok=True)

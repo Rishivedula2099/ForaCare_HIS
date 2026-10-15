@@ -45,3 +45,6 @@ Thumbs.db
 # OS / Temp
 tmp/
 temp/
+
+# Database/file backups contain PHI - never commit
+backups/

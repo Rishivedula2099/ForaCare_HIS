@@ -50,7 +50,7 @@ export default function LabReportPage() {
 
   const verifyUrl =
     report?.reportQrToken && typeof window !== "undefined"
-      ? absoluteApiUrl(`/lab/verify-doc?id=${report.labOrderId}&sig=${report.reportQrToken}`)
+      ? absoluteApiUrl(`/lab/verify-doc?id=${encodeURIComponent(report.labOrderId)}&sig=${encodeURIComponent(report.reportQrToken)}`)
       : undefined;
 
   if (reportQuery.isLoading) {

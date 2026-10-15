@@ -1,12 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.permissions import require_permissions
+from app.core.rate_limit import rate_limit
 from app.core.responses import ApiResponse, success_response
 from app.modules.auth.models import User
+from app.modules.audit import service as audit_service
 from app.modules.lab import service
 from app.modules.documents import service as document_service
 from app.modules.documents.base import DocumentContext
@@ -223,6 +226,9 @@ async def get_lab_order(
     current_user: User = Depends(require_permissions("lab.view")),
 ):
     item = await service.get_lab_order(db, lab_order_id, current_user)
+    await audit_service.record_view(
+        db, action="lab.order_viewed", resource_type="lab_order", resource_id=lab_order_id
+    )
     return _ok(request, item.model_dump(mode="json"))
 
 
@@ -606,6 +612,9 @@ async def get_lab_report(
     current_user: User = Depends(require_permissions("lab.view")),
 ):
     item = await service.get_lab_report(db, current_user, lab_order_id)
+    await audit_service.record_view(
+        db, action="lab.report_viewed", resource_type="lab_order", resource_id=lab_order_id
+    )
     return _ok(request, item.model_dump(mode="json"))
 
 
@@ -644,11 +653,12 @@ async def get_lab_report_pdf(
     "/verify-doc",
     response_model=ApiResponse,
     summary="Public, unauthenticated verification of a lab report's QR code",
+    dependencies=[Depends(rate_limit("lab-verify", limit=get_settings().rate_limit_public_per_minute))],
 )
 async def verify_lab_report(
     request: Request,
     id: uuid.UUID,
-    sig: str,
+    sig: str = Query(max_length=128),
     db: AsyncSession = Depends(get_db),
 ):
     item = await service.verify_lab_report(db, id, sig)

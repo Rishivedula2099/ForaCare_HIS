@@ -1,10 +1,15 @@
 import asyncio
+import os
 import sys
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+# P9-B01: the suite logs in dozens of times from one client IP; rate limiting
+# is exercised explicitly in tests/test_api_hardening.py instead.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+
+from app.main import app  # noqa: E402
 
 if sys.platform == "win32":
     # asyncpg's connection I/O is incompatible with the default Windows

@@ -167,7 +167,7 @@ class ApiClient {
     if (!window.location.pathname.startsWith("/login")) {
       // Avoid infinite redirect loop if already on login page
       window.location.href = `/login?redirect=${encodeURIComponent(
-        window.location.pathname
+        window.location.pathname + window.location.search
       )}`;
     }
   }

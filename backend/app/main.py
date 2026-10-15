@@ -11,6 +11,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
 from app.modules.documents.playwright_pdf import shutdown_pdf_engine
 from app.core.middleware import CorrelationIdMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 
 settings = get_settings()
 configure_logging(settings)
@@ -32,15 +33,20 @@ app = FastAPI(
     version=settings.app_version,
     debug=settings.debug,
     lifespan=lifespan,
+    # P9-B01: don't publish the API schema outside local development.
+    docs_url="/docs" if settings.is_local else None,
+    redoc_url="/redoc" if settings.is_local else None,
+    openapi_url="/openapi.json" if settings.is_local else None,
 )
 
 app.add_middleware(CorrelationIdMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Request-ID"],
     expose_headers=["X-Request-ID"],
 )
 

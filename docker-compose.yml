@@ -35,6 +35,10 @@ services:
       ABDM_CLIENT_SECRET: ${ABDM_CLIENT_SECRET:-}
       ACCESS_TOKEN_EXPIRE_MINUTES: "15"
       REFRESH_TOKEN_EXPIRE_DAYS: "3"
+    volumes:
+      # P9-B05: uploaded patient photos. Without a volume they lived in the
+      # container's writable layer and vanished on every rebuild/recreate.
+      - forahis_file_storage:/app/storage
     command: >
       sh -c "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     healthcheck:
@@ -85,3 +89,4 @@ services:
 
 volumes:
   forahis_postgres_data:
+  forahis_file_storage:

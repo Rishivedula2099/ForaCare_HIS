@@ -22,6 +22,7 @@ import { MAIN_NAV_ITEMS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/common/logo";
 import { useAuth } from "@/hooks/use-auth";
+import { useRouteAccess } from "@/hooks/use-route-access";
 
 const ICONS_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard,
@@ -41,7 +42,10 @@ const ICONS_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 export function Sidebar() {
   const pathname = usePathname();
   const { hasRole } = useAuth();
-  const visibleNavItems = MAIN_NAV_ITEMS.filter((item) => hasRole(item.roles));
+  const canAccess = useRouteAccess();
+  // Hidden == unreachable: a link shows only if both the role list and the
+  // route permission policy (lib/route-access.ts) admit the user.
+  const visibleNavItems = MAIN_NAV_ITEMS.filter((item) => hasRole(item.roles) && canAccess(item.href));
 
   return (
     <aside className="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0 h-screen sticky top-0">
