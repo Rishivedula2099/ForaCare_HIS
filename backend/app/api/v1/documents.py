@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.config import get_settings
 from app.core.permissions import get_current_user, require_permissions
+from app.core.rate_limit import rate_limit
 from app.core.responses import ApiResponse, success_response
 from app.modules.auth.models import User
 from app.modules.documents import service, templates
@@ -29,12 +31,13 @@ async def list_document_types(request: Request, current_user: User = Depends(get
     "/verify",
     response_model=ApiResponse,
     summary="Public, unauthenticated verification of a printed document QR code (P7-B05)",
+    dependencies=[Depends(rate_limit("doc-verify", limit=get_settings().rate_limit_public_per_minute))],
 )
 async def verify_document(
     request: Request,
-    t: str,
-    id: uuid.UUID,
-    sig: str,
+    t: str = Query(max_length=40),
+    id: uuid.UUID = Query(),
+    sig: str = Query(max_length=128),
     db: AsyncSession = Depends(get_db),
 ):
     result = await service.verify_document(db, t, id, sig)

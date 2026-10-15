@@ -2,14 +2,13 @@
 FROM python:3.11-slim AS builder
 
 WORKDIR /build
-COPY pyproject.toml ./
+# P9-B06: install exactly the audited, hash-pinned set from requirements.lock
+# (pyproject.toml uses ">=" ranges, so building from it would pull whatever is
+# newest that day - unreproducible, and unscannable before it ships).
+# Regenerate with infra/security/update-backend-lock.sh.
+COPY requirements.lock ./
 
-# Dependencies are declared once in pyproject.toml ([project.dependencies]) -
-# extract them at build time instead of duplicating the list here so the
-# image never drifts from what the app actually depends on.
-RUN python -c "import tomllib; deps = tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']; open('requirements.txt', 'w').write('\n'.join(deps))"
-
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes --prefix=/install -r requirements.lock
 
 
 FROM python:3.11-slim
@@ -36,7 +35,8 @@ COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 
-RUN chown -R appuser:appuser /app
+# P9-B05: created before the chown so the named storage volume inherits appuser ownership.
+RUN mkdir -p /app/storage && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000

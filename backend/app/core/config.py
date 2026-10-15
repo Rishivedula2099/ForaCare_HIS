@@ -18,6 +18,12 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
+    # P9-B01: in-process rate limits (app/core/rate_limit.py), per client IP.
+    rate_limit_enabled: bool = True
+    rate_limit_login_per_minute: int = 10
+    rate_limit_sensitive_per_minute: int = 10
+    rate_limit_public_per_minute: int = 30
+
     log_level: str = "INFO"
     log_json: bool = False
 
@@ -88,6 +94,11 @@ class Settings(BaseSettings):
         repo), so any non-local environment must override every one."""
         if self.is_local:
             return self
+        if self.debug:
+            raise ValueError(f"DEBUG must be false when ENVIRONMENT={self.environment!r}")
+        if self.db_echo:
+            # echo logs every statement with its bound values (PHI, hashes).
+            raise ValueError(f"DB_ECHO must be false when ENVIRONMENT={self.environment!r}")
         insecure = [
             name
             for name in (
@@ -103,6 +114,22 @@ class Settings(BaseSettings):
                 + ", ".join(name.upper() for name in insecure)
             )
         return self
+
+    def __repr_args__(self):
+        """Keep credentials out of repr()/str() and of pydantic's validation
+        error text (P9-B04); `database_url` carries the DB password."""
+        masked = {"jwt_access_secret_key", "jwt_refresh_secret_key", "qr_signing_secret_key", "database_url"}
+        for name, value in super().__repr_args__():
+            yield name, "***" if name in masked else value
+
+    @property
+    def database_password(self) -> str:
+        from sqlalchemy.engine import make_url
+
+        try:
+            return make_url(self.database_url).password or ""
+        except Exception:
+            return ""
 
     @property
     def cors_origin_list(self) -> list[str]:

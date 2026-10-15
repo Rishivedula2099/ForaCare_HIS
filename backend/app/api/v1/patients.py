@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.permissions import require_permissions
 from app.core.responses import ApiResponse, success_response
@@ -117,7 +118,9 @@ async def upload_patient_photo(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permissions("patients.manage")),
 ):
-    raw_bytes = await file.read()
+    # Read one byte past the limit so an oversized upload is rejected
+    # without buffering an arbitrarily large body in memory.
+    raw_bytes = await file.read(get_settings().file_upload_max_bytes + 1)
     photo = await service.upload_patient_photo(
         db,
         patient_id,
@@ -145,4 +148,11 @@ async def get_patient_photo(
 ):
     photo = await service.get_patient_photo_file(db, patient_id, photo_id, current_user)
     absolute_path = files_service.resolve_absolute_path(photo.storage_path)
-    return FileResponse(absolute_path, media_type=photo.content_type)
+    return FileResponse(
+        absolute_path,
+        media_type=photo.content_type,
+        headers={
+            "Content-Disposition": "inline",
+            "Cache-Control": "private, no-store",
+        },
+    )

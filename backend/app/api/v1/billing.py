@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.responses import ApiResponse, success_response
 from app.modules.auth.models import User
+from app.modules.audit import service as audit_service
 from app.modules.billing import service
 from app.modules.billing.schemas import (
     DepositCreateRequest,
@@ -160,6 +161,9 @@ async def get_invoice(
     current_user: User = Depends(require_billing_permission("billing.view")),
 ):
     item = await service.get_invoice(db, invoice_id, current_user)
+    await audit_service.record_view(
+        db, action="billing.invoice_viewed", resource_type="invoice", resource_id=invoice_id
+    )
     return _ok(request, item.model_dump(mode="json"))
 
 

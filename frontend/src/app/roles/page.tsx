@@ -241,7 +241,7 @@ function RolesPageContent() {
 
 export default function RolesPage() {
   return (
-    <AppShell allowedRoles={[ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN]}>
+    <AppShell>
       <RolesPageContent />
     </AppShell>
   );

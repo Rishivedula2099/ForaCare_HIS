@@ -5,12 +5,14 @@ from datetime import date
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.cookies import ACCESS_COOKIE_NAME
 from app.core.database import get_db
 from app.core.exceptions import AppError
 from app.core.permissions import authenticate_by_access_token, require_permissions
 from app.core.responses import ApiResponse, success_response
 from app.modules.auth.models import User
+from app.modules.audit import service as audit_service
 from app.modules.opd import service
 from app.modules.opd.schemas import (
     ConsultationCreateRequest,
@@ -207,6 +209,9 @@ async def get_consultation(
     current_user: User = Depends(require_permissions("consultations.view")),
 ):
     consultation = await service.get_consultation(db, current_user, encounter_id)
+    await audit_service.record_view(
+        db, action="opd.consultations.viewed", resource_type="encounter", resource_id=encounter_id
+    )
     return success_response(
         consultation.model_dump(mode="json"),
         request_id=getattr(request.state, "request_id", None),
@@ -281,6 +286,9 @@ async def get_prescription(
     current_user: User = Depends(require_permissions("prescriptions.view")),
 ):
     prescription = await service.get_prescription(db, current_user, encounter_id)
+    await audit_service.record_view(
+        db, action="opd.prescriptions.viewed", resource_type="encounter", resource_id=encounter_id
+    )
     return success_response(
         prescription.model_dump(mode="json"),
         request_id=getattr(request.state, "request_id", None),
@@ -323,6 +331,14 @@ async def doctor_queue_ws(
     requests doesn't apply to WebSocket routes), and fails by closing the
     socket with a policy-violation code rather than raising an HTTP error.
     """
+    # Browsers attach cookies to cross-site WebSocket handshakes, so only
+    # accept the configured frontend origins (CSWSH defence). Non-browser
+    # clients send no Origin and still need a valid session cookie.
+    origin = websocket.headers.get("origin")
+    if origin is not None and origin not in get_settings().cors_origin_list:
+        await websocket.close(code=4403)
+        return
+
     try:
         current_user = await authenticate_by_access_token(websocket.cookies.get(ACCESS_COOKIE_NAME), db)
         if "opd.view" not in {permission.code for permission in current_user.role.permissions}:

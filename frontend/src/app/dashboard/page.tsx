@@ -1,13 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { AppShell } from "@/components/layout/app-shell";
 import { useAuth } from "@/hooks/use-auth";
 import { RoleDashboard } from "@/components/dashboard/role-dashboard";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ROLE_METADATA_MAP } from "@/types/auth";
+import { getRoleMetadata } from "@/types/auth";
 
 // Authorization is by permission, not by URL: this single /dashboard route
 // resolves its content from the caller's role/permissions (S1-F02) rather
@@ -25,7 +23,7 @@ function DashboardContent() {
 
   if (!user) return null;
 
-  const metadata = ROLE_METADATA_MAP[user.role];
+  const metadata = getRoleMetadata(user.role);
 
   return (
     <AppShell>
@@ -39,17 +37,12 @@ function DashboardContent() {
               <Badge className={metadata.badgeClassName}>{metadata.label}</Badge>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              {facility?.name ?? "No facility context"} - {metadata.description}
+              {facility ? `${facility.name} (${facility.facility_code})` : "No facility context"} - {metadata.description}
             </p>
           </div>
-          <Link href="/">
-            <Button variant="outline" size="sm">
-              Full Operations View
-            </Button>
-          </Link>
         </div>
 
-        <RoleDashboard role={user.role} />
+        <RoleDashboard />
       </div>
     </AppShell>
   );

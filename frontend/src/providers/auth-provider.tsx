@@ -2,50 +2,37 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
-import { findFacilityById, MOCK_FACILITIES, mockLogin } from "@/lib/auth-mock";
-import { UserRole } from "@/lib/constants";
 import { ApiError } from "@/types/api";
 import {
   adaptBackendUser,
   AuthContextType,
-  AuthSession,
+  AuthError,
   AuthUser,
   BackendUserPayload,
   ChangePasswordInput,
   Facility,
   LoginCredentials,
+  LoginFailureCode,
   Tenant,
 } from "@/types/auth";
 import { useToast } from "@/hooks/use-toast";
 
-// Real sessions are HttpOnly cookies set by the backend (S1-F01) - nothing
-// about them is ever stored here. This key only caches the *offline demo*
-// fallback session (see auth-mock.ts) in sessionStorage, since that mode
-// has no real cookie to persist it and must survive a page refresh some
-// other way. It holds user/tenant/facility only - never a token.
-const MOCK_SESSION_STORAGE_KEY = "foracare_mock_session";
+// Sessions are HttpOnly cookies set by the backend (S1-F01). Nothing about
+// them - and no credential of any kind - is ever stored in the browser.
 
 const IDLE_LIMIT_MS = 15 * 60 * 1000;
 const IDLE_WARNING_MS = 60 * 1000;
 const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
 
-interface StoredMockSession {
-  user: AuthUser;
-  tenant: Tenant;
-  facility: Facility;
-}
-
-interface MeResponseData {
+/** Shape of `/auth/login`, `/auth/me` and `/auth/switch-facility` data. */
+interface SessionResponseData {
   user: BackendUserPayload;
   tenant: Tenant;
   facility: Facility;
-}
-
-interface LoginResponseData {
-  user: BackendUserPayload;
-  tenant: Tenant;
-  facility: Facility;
+  /** Every facility the user holds a membership in. */
+  facilities: Facility[];
 }
 
 interface SessionTimeoutState {
@@ -60,41 +47,38 @@ interface InternalAuthContextType extends AuthContextType {
 
 const AuthContext = React.createContext<InternalAuthContextType | null>(null);
 
-function persistMockSession(session: AuthSession) {
-  sessionStorage.setItem(
-    MOCK_SESSION_STORAGE_KEY,
-    JSON.stringify({ user: session.user, tenant: session.tenant, facility: session.facility })
-  );
-}
-
-function clearMockSession() {
-  sessionStorage.removeItem(MOCK_SESSION_STORAGE_KEY);
-}
-
-function readStoredMockSession(): StoredMockSession | null {
-  try {
-    const raw = sessionStorage.getItem(MOCK_SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as StoredMockSession;
-  } catch {
-    return null;
-  }
-}
-
-function isNetworkError(error: unknown): boolean {
+/** Maps a backend error onto the sign-in failure states the UI distinguishes. */
+function toAuthError(error: unknown): AuthError {
   const apiError = error as Partial<ApiError>;
-  return apiError?.code === "NETWORK_ERROR" || apiError?.code === "TIMEOUT";
+  switch (apiError?.code) {
+    case "ACCOUNT_DISABLED":
+      return new AuthError(apiError.message || "This account is disabled.", "ACCOUNT_DISABLED");
+    case "NO_FACILITY_ACCESS":
+    case "FACILITY_NOT_ASSIGNED":
+      return new AuthError(apiError.message || "No facility access.", apiError.code as LoginFailureCode);
+    case "NETWORK_ERROR":
+    case "TIMEOUT":
+      return new AuthError("Unable to reach the server. Check your connection and try again.", "NETWORK_ERROR");
+  }
+  if (apiError?.status_code === 429) {
+    return new AuthError("Too many attempts. Please wait a minute and try again.", "TOO_MANY_REQUESTS");
+  }
+  if (apiError?.status_code === 401) {
+    return new AuthError("Invalid username or password.", "INVALID_CREDENTIALS");
+  }
+  return new AuthError(apiError?.message || "Unable to sign in. Please try again.", "UNKNOWN");
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [user, setUser] = React.useState<AuthUser | null>(null);
   const [tenant, setTenant] = React.useState<Tenant | null>(null);
   const [facility, setFacility] = React.useState<Facility | null>(null);
+  const [facilities, setFacilities] = React.useState<Facility[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
-  const [isUsingMockAuth, setIsUsingMockAuth] = React.useState(false);
   const [sessionTimeout, setSessionTimeout] = React.useState<SessionTimeoutState>({
     isWarningVisible: false,
     secondsRemaining: IDLE_WARNING_MS / 1000,
@@ -103,38 +87,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const lastActivityRef = React.useRef<number>(0);
   const isAuthenticatedRef = React.useRef(false);
 
-  // Hydrate on mount. The real session lives in HttpOnly cookies the
-  // browser already sent with this call - there is no client-side token to
-  // read - so we simply ask the backend who (if anyone) is authenticated.
-  // Only the offline mock fallback needs a client-side snapshot, since it
-  // has no backend session to ask.
+  const applySession = React.useCallback((data: SessionResponseData): AuthUser => {
+    const adapted = adaptBackendUser(data.user);
+    setUser(adapted);
+    setTenant(data.tenant);
+    setFacility(data.facility);
+    setFacilities(data.facilities?.length ? data.facilities : [data.facility]);
+    return adapted;
+  }, []);
+
+  // Hydrate on mount. The session lives in HttpOnly cookies the browser
+  // already sent with this call - there is no client-side token to read - so
+  // we simply ask the backend who (if anyone) is authenticated. A 401 just
+  // means "not signed in".
   React.useEffect(() => {
     let cancelled = false;
 
     async function hydrate() {
       lastActivityRef.current = Date.now();
       try {
-        const response = await apiClient.get<MeResponseData>("/auth/me");
-        if (cancelled) return;
-        if (response.data) {
-          setUser(adaptBackendUser(response.data.user));
-          setTenant(response.data.tenant);
-          setFacility(response.data.facility);
-          setIsUsingMockAuth(false);
-          clearMockSession();
-        }
-      } catch (error) {
-        if (cancelled) return;
-        if (isNetworkError(error)) {
-          const stored = readStoredMockSession();
-          if (stored) {
-            setUser(stored.user);
-            setTenant(stored.tenant);
-            setFacility(stored.facility);
-            setIsUsingMockAuth(true);
-          }
-        }
-        // A 401 simply means "not logged in" - nothing to restore.
+        const response = await apiClient.get<SessionResponseData>("/auth/me");
+        if (!cancelled && response.data) applySession(response.data);
+      } catch {
+        // Not signed in (or the backend is unreachable): stay signed out.
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -144,121 +119,93 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applySession]);
 
   React.useEffect(() => {
     isAuthenticatedRef.current = !!user;
   }, [user]);
 
-  const logout = React.useCallback(async () => {
-    if (!isUsingMockAuth) {
+  const logout = React.useCallback(
+    async (reason: "idle" | "manual" = "manual") => {
       try {
         await apiClient.post("/auth/logout");
       } catch {
         // best-effort - still clear local state below even if the server call fails.
       }
-    }
-    clearMockSession();
-    setUser(null);
-    setTenant(null);
-    setFacility(null);
-    setIsUsingMockAuth(false);
-    setSessionTimeout({ isWarningVisible: false, secondsRemaining: IDLE_WARNING_MS / 1000 });
-    router.push("/login");
-  }, [isUsingMockAuth, router]);
+      // Drop every cached response: the next person on this browser must not
+      // see the previous user's patient/billing/lab data (P9-F03).
+      queryClient.clear();
+      setUser(null);
+      setTenant(null);
+      setFacility(null);
+      setFacilities([]);
+      setSessionTimeout({ isWarningVisible: false, secondsRemaining: IDLE_WARNING_MS / 1000 });
+      router.push(reason === "idle" ? "/login?reason=idle" : "/login");
+    },
+    [router, queryClient]
+  );
 
-  const login = React.useCallback(async (credentials: LoginCredentials) => {
-    let session: AuthSession;
-    let usedMock = false;
-
-    try {
-      const response = await apiClient.post<LoginResponseData>("/auth/login", {
-        username: credentials.username,
-        password: credentials.password,
-        facility_id: credentials.facility_id,
-      });
-      if (!response.data) throw new Error("Empty login response from server.");
-      session = {
-        user: adaptBackendUser(response.data.user),
-        tenant: response.data.tenant,
-        facility: response.data.facility,
-        session: { token_type: "bearer", expires_in: 15 * 60 },
-      };
-    } catch (error) {
-      if (!isNetworkError(error)) {
-        const apiError = error as ApiError;
-        throw new Error(apiError?.message || "Invalid username or password.");
+  const login = React.useCallback(
+    async (credentials: LoginCredentials): Promise<AuthUser> => {
+      let data: SessionResponseData;
+      try {
+        const response = await apiClient.post<SessionResponseData>("/auth/login", {
+          username: credentials.username,
+          password: credentials.password,
+          facility_id: credentials.facility_id,
+        });
+        if (!response.data) throw new AuthError("Empty response from server.", "UNKNOWN");
+        data = response.data;
+      } catch (error) {
+        throw error instanceof AuthError ? error : toAuthError(error);
       }
-      // Backend unreachable - fall back to mock auth so the UI stays usable.
-      session = await mockLogin(credentials.username, credentials.password);
-      usedMock = true;
-    }
-
-    if (usedMock) {
-      persistMockSession(session);
-    } else {
-      clearMockSession();
-    }
-    setUser(session.user);
-    setTenant(session.tenant);
-    setFacility(session.facility);
-    setIsUsingMockAuth(usedMock);
-    lastActivityRef.current = Date.now();
-  }, []);
+      // A different user (role/permissions/tenant) may sign in on top of a
+      // previous session's cache - start clean.
+      queryClient.clear();
+      lastActivityRef.current = Date.now();
+      return applySession(data);
+    },
+    [queryClient, applySession]
+  );
 
   const switchFacility = React.useCallback(
-    (facilityId: string) => {
-      const target = findFacilityById(facilityId) ?? MOCK_FACILITIES.find((f) => f.id === facilityId);
-      if (!target) return;
-      setFacility(target);
-      if (isUsingMockAuth) {
-        const stored = readStoredMockSession();
-        if (stored) {
-          persistMockSession({
-            user: stored.user,
-            tenant: stored.tenant,
-            facility: target,
-            session: { token_type: "bearer", expires_in: 15 * 60 },
-          });
-        }
-      }
-      toast({ title: "Facility switched", description: target.name, variant: "info" });
-    },
-    [isUsingMockAuth, toast]
-  );
-
-  const changePassword = React.useCallback(
-    async (input: ChangePasswordInput) => {
-      if (input.new_password !== input.confirm_password) {
-        throw new Error("New password and confirmation do not match.");
-      }
-
-      if (isUsingMockAuth) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        return;
-      }
-
+    async (facilityId: string) => {
+      if (facilityId === facility?.id) return;
       try {
-        await apiClient.post("/auth/change-password", {
-          current_password: input.current_password,
-          new_password: input.new_password,
+        const response = await apiClient.post<SessionResponseData>("/auth/switch-facility", {
+          facility_id: facilityId,
         });
+        if (!response.data) return;
+        queryClient.clear(); // facility-scoped data must not carry over
+        applySession(response.data);
+        toast({ title: "Facility switched", description: response.data.facility.name, variant: "info" });
+        router.push("/dashboard");
       } catch (error) {
-        const apiError = error as ApiError;
-        throw new Error(apiError?.message || "Unable to change password.");
+        toast({
+          title: "Could not switch facility",
+          description: (error as ApiError)?.message || "Please try again.",
+          variant: "destructive",
+        });
       }
     },
-    [isUsingMockAuth]
+    [facility?.id, queryClient, applySession, toast, router]
   );
 
-  const hasRole = React.useCallback(
-    (roles?: UserRole[]) => {
-      if (!roles || roles.length === 0) return true;
-      if (!user) return false;
-      return roles.includes(user.role);
-    },
-    [user]
-  );
+  const changePassword = React.useCallback(async (input: ChangePasswordInput) => {
+    if (input.new_password !== input.confirm_password) {
+      throw new Error("New password and confirmation do not match.");
+    }
+
+    try {
+      await apiClient.post("/auth/change-password", {
+        current_password: input.current_password,
+        new_password: input.new_password,
+      });
+    } catch (error) {
+      const apiError = error as ApiError;
+      throw new Error(apiError?.message || "Unable to change password.");
+    }
+  }, []);
 
   const hasPermission = React.useCallback(
     (permission: string) => {
@@ -291,7 +238,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (remainingUntilWarning <= 0) {
         const secondsRemaining = Math.max(0, Math.ceil((IDLE_LIMIT_MS - idleFor) / 1000));
         if (secondsRemaining <= 0) {
-          logout();
+          void logout("idle");
         } else {
           setSessionTimeout({ isWarningVisible: true, secondsRemaining });
         }
@@ -309,15 +256,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     tenant,
     facility,
-    availableFacilities: MOCK_FACILITIES,
+    availableFacilities: facilities,
     isAuthenticated: !!user,
     isLoading,
-    isUsingMockAuth,
     login,
     logout,
     switchFacility,
     changePassword,
-    hasRole,
     hasPermission,
     sessionTimeout,
     extendSession,

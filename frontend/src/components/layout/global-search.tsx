@@ -13,7 +13,6 @@ import {
   UserPlus,
   Ticket,
   PlusCircle,
-  User,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -26,6 +25,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { MAIN_NAV_ITEMS } from "@/lib/constants";
+import { useRouteAccess } from "@/hooks/use-route-access";
 
 const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard,
@@ -37,17 +37,11 @@ const NAV_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> 
   Printer,
 };
 
+// Only routes that exist; each is shown only if the user's permissions admit it.
 const QUICK_ACTIONS = [
   { label: "Register New Patient", href: "/patients/new", icon: UserPlus, shortcut: "N P" },
-  { label: "Generate New OPD Token", href: "/opd/token/new", icon: Ticket, shortcut: "N T" },
-  { label: "Admit Patient to IPD", href: "/ipd/admit", icon: PlusCircle, shortcut: "N A" },
-];
-
-// Placeholder result set until the patient search API (P2) is wired in.
-const RECENT_PATIENTS = [
-  { name: "Sunita Verma", uid: "FC01-202609-000102", href: "/patients/FC01-202609-000102" },
-  { name: "Rajesh Kumar", uid: "FC01-202609-000105", href: "/patients/FC01-202609-000105" },
-  { name: "Ananya Sharma", uid: "FC01-202609-000098", href: "/patients/FC01-202609-000098" },
+  { label: "OPD Registration & Queue", href: "/opd", icon: Ticket, shortcut: "N T" },
+  { label: "Admit Patient to IPD", href: "/ipd/allocate", icon: PlusCircle, shortcut: "N A" },
 ];
 
 interface GlobalSearchProps {
@@ -57,6 +51,7 @@ interface GlobalSearchProps {
 
 export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
   const router = useRouter();
+  const canAccess = useRouteAccess();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -81,7 +76,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
         <CommandEmpty>No results found.</CommandEmpty>
 
         <CommandGroup heading="Quick Actions">
-          {QUICK_ACTIONS.map((action) => {
+          {QUICK_ACTIONS.filter((action) => canAccess(action.href)).map((action) => {
             const Icon = action.icon;
             return (
               <CommandItem
@@ -99,24 +94,8 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 
         <CommandSeparator />
 
-        <CommandGroup heading="Recent Patients">
-          {RECENT_PATIENTS.map((patient) => (
-            <CommandItem
-              key={patient.uid}
-              value={`${patient.name} ${patient.uid}`}
-              onSelect={() => runCommand(() => router.push(patient.href))}
-            >
-              <User />
-              <span>{patient.name}</span>
-              <CommandShortcut className="font-mono">{patient.uid}</CommandShortcut>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-
-        <CommandSeparator />
-
         <CommandGroup heading="Navigate">
-          {MAIN_NAV_ITEMS.map((item) => {
+          {MAIN_NAV_ITEMS.filter((item) => canAccess(item.href)).map((item) => {
             const Icon = NAV_ICON_MAP[item.iconName] || LayoutDashboard;
             return (
               <CommandItem

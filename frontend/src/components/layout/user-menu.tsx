@@ -15,8 +15,7 @@ import {
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
 import { RoleBadge } from "@/components/common/role-badge";
 import { useAuth } from "@/hooks/use-auth";
-import { ROLES } from "@/lib/constants";
-import { ROLE_METADATA_MAP } from "@/types/auth";
+import { getRoleMetadata } from "@/types/auth";
 
 function getInitials(name: string): string {
   return name
@@ -28,14 +27,14 @@ function getInitials(name: string): string {
 }
 
 export function UserMenu() {
-  const { user, hasRole, logout } = useAuth();
+  const { user, hasPermission, logout } = useAuth();
   const router = useRouter();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = React.useState(false);
 
   if (!user) return null;
 
-  const roleMeta = ROLE_METADATA_MAP[user.role];
-  const canManageRoles = hasRole([ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN]);
+  const roleMeta = getRoleMetadata(user.role);
+  const canManageRoles = hasPermission("roles.view");
 
   return (
     <>

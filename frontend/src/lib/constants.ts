@@ -8,6 +8,13 @@ export const APP_VERSION = "0.1.0-alpha";
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+/**
+ * P10-B01: true only in non-production builds. Gates developer-only screens
+ * (e.g. the design-system gallery). There is no client-side authentication
+ * bypass of any kind: every session comes from the backend.
+ */
+export const IS_DEV_BUILD = process.env.NODE_ENV !== "production";
+
 export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
   HOSPITAL_ADMIN: "HOSPITAL_ADMIN",
@@ -54,12 +61,15 @@ export const LAB_ORDER_STATUS = {
   FINALIZED: "FINALIZED",
 } as const;
 
+/**
+ * Visibility is decided by the route policy (lib/route-access.ts, i.e. the
+ * user's effective permissions), never by role names.
+ */
 export interface NavItem {
   title: string;
   href: string;
   iconName: string;
   badge?: string;
-  roles?: UserRole[];
 }
 
 export const MAIN_NAV_ITEMS: NavItem[] = [
@@ -82,54 +92,26 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
     title: "Departments",
     href: "/departments",
     iconName: "Building2",
-    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN, ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST],
   },
   {
     title: "Doctors",
     href: "/doctors",
     iconName: "Stethoscope",
-    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN, ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST],
   },
   {
     title: "IPD & Beds",
     href: "/ipd",
     iconName: "BedDouble",
-    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN, ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST],
   },
   {
     title: "Billing & Cashier",
     href: "/billing",
     iconName: "Receipt",
-    // Open to every role except Super Admin (deliberately excluded - see
-    // `_FULL_BILLING_ACCESS` in backend/app/modules/rbac/constants.py).
-    roles: [
-      ROLES.HOSPITAL_ADMIN,
-      ROLES.BILLING_CASHIER,
-      ROLES.DOCTOR,
-      ROLES.NURSE,
-      ROLES.RECEPTIONIST,
-      ROLES.LAB_TECH,
-      ROLES.LAB_APPROVER,
-      ROLES.AUDITOR,
-    ],
   },
   {
     title: "Laboratory",
     href: "/laboratory",
     iconName: "FlaskConical",
-    // Mirrors backend `ROLE_PERMISSION_SEED`'s `lab.view` grants (every role
-    // except SUPER_ADMIN - hidden from the sidebar like Billing, though it
-    // still has the permission on the backend - and BILLING_CASHIER, which
-    // holds no lab permissions at all).
-    roles: [
-      ROLES.HOSPITAL_ADMIN,
-      ROLES.DOCTOR,
-      ROLES.NURSE,
-      ROLES.RECEPTIONIST,
-      ROLES.LAB_TECH,
-      ROLES.LAB_APPROVER,
-      ROLES.AUDITOR,
-    ],
   },
   {
     title: "Documents",
@@ -140,18 +122,15 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
     title: "Audit & Logs",
     href: "/audit",
     iconName: "ShieldCheck",
-    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN, ROLES.AUDITOR],
   },
   {
     title: "Settings",
     href: "/settings",
     iconName: "SlidersHorizontal",
-    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN],
   },
   {
     title: "Roles & Permissions",
     href: "/roles",
     iconName: "KeyRound",
-    roles: [ROLES.SUPER_ADMIN, ROLES.HOSPITAL_ADMIN],
   },
 ];

@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import uuid
 
@@ -11,13 +12,17 @@ from app.core.context import set_request_id
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
+# A client-supplied ID is echoed into logs and a response header, so accept
+# only a short, inert charset (blocks log injection / header smuggling).
+_SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
     """Assigns a request/correlation ID to every request and echoes it back."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        request_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid.uuid4())
+        supplied = request.headers.get(REQUEST_ID_HEADER, "")
+        request_id = supplied if _SAFE_REQUEST_ID.match(supplied) else str(uuid.uuid4())
         set_request_id(request_id)
         request.state.request_id = request_id
 

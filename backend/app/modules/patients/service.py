@@ -1,11 +1,12 @@
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import Integer, extract, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.permissions import ensure_same_facility, ensure_same_tenant
+from app.core.sql import LIKE_ESCAPE, like_contains, like_prefix
 from app.modules.audit import service as audit_service
 from app.modules.auth.models import User
 from app.modules.facilities.models import Facility
@@ -35,21 +36,29 @@ def _calculate_age_years(dob: date) -> int:
     return years
 
 
+async def _next_sequence(db: AsyncSession, column, prefix: str) -> int:
+    """Highest numeric suffix already issued under `prefix`, plus one.
+
+    Counting rows (the previous approach) restarts at 1 every month while
+    `mrn` is unique across ALL tenants and years, so a new month - or a
+    second hospital - collided with an existing MRN and failed with a 500.
+    """
+    suffix = func.cast(func.substr(column, len(prefix) + 1), Integer)
+    result = await db.execute(
+        select(func.max(suffix)).where(column.like(like_prefix(prefix), escape=LIKE_ESCAPE))
+    )
+    return (result.scalar_one_or_none() or 0) + 1
+
+
 async def _generate_uid_and_mrn(db: AsyncSession, tenant_id: uuid.UUID, facility: Facility) -> tuple[str, str]:
     now = datetime.now(timezone.utc)
-    result = await db.execute(
-        select(func.count())
-        .select_from(Patient)
-        .where(
-            Patient.facility_id == facility.id,
-            extract("year", Patient.created_at) == now.year,
-            extract("month", Patient.created_at) == now.month,
-        )
-    )
-    sequence = (result.scalar_one() or 0) + 1
-    seq_str = str(sequence).zfill(6)
-    uid = f"{facility.facility_code}-{now.strftime('%Y%m')}-{seq_str}"
-    mrn = f"MRN-{now.year}-{seq_str}"
+    # Serialise concurrent registrations so two requests can't read the same
+    # maximum; released automatically at commit/rollback.
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext('patient-uid-mrn'))"))
+    uid_prefix = f"{facility.facility_code}-{now.strftime('%Y%m')}-"
+    mrn_prefix = f"MRN-{now.year}-"
+    uid = f"{uid_prefix}{str(await _next_sequence(db, Patient.uid, uid_prefix)).zfill(6)}"
+    mrn = f"{mrn_prefix}{str(await _next_sequence(db, Patient.mrn, mrn_prefix)).zfill(6)}"
     return uid, mrn
 
 
@@ -115,19 +124,19 @@ async def list_patients(
     )
 
     if uid:
-        stmt = stmt.where(Patient.uid.ilike(f"%{uid}%"))
+        stmt = stmt.where(Patient.uid.ilike(like_contains(uid), escape=LIKE_ESCAPE))
     if mrn:
-        stmt = stmt.where(Patient.mrn.ilike(f"%{mrn}%"))
+        stmt = stmt.where(Patient.mrn.ilike(like_contains(mrn), escape=LIKE_ESCAPE))
     if name:
-        pattern = f"%{name}%"
+        pattern = like_contains(name)
         stmt = stmt.where(
-            (Patient.first_name.ilike(pattern))
-            | (Patient.last_name.ilike(pattern))
-            | (func.concat(Patient.first_name, " ", Patient.last_name).ilike(pattern))
+            (Patient.first_name.ilike(pattern, escape=LIKE_ESCAPE))
+            | (Patient.last_name.ilike(pattern, escape=LIKE_ESCAPE))
+            | (func.concat(Patient.first_name, " ", Patient.last_name).ilike(pattern, escape=LIKE_ESCAPE))
         )
     if mobile:
         stmt = stmt.join(PatientContact, PatientContact.patient_id == Patient.id).where(
-            PatientContact.value.ilike(f"%{mobile}%")
+            PatientContact.value.ilike(like_contains(mobile), escape=LIKE_ESCAPE)
         )
 
     stmt = stmt.order_by(Patient.created_at.desc())

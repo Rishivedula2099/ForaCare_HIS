@@ -10,16 +10,20 @@ export function FacilitySwitcher() {
 
   if (!facility) return null;
 
+  const canSwitch = availableFacilities.length > 1;
+
   const handleSelect = (facilityId: string) => {
-    switchFacility(facilityId);
     setIsOpen(false);
+    void switchFacility(facilityId);
   };
 
   return (
     <div className="relative">
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => canSwitch && setIsOpen(!isOpen)}
+        disabled={!canSwitch}
+        title={canSwitch ? "Switch facility" : "Your account has one facility"}
         className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-medium shadow-xs transition-colors cursor-pointer"
         aria-expanded={isOpen}
       >
@@ -30,7 +34,7 @@ export function FacilitySwitcher() {
             {facility.facility_code}
           </span>
         </div>
-        <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-1" />
+        {canSwitch && <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-1" />}
       </button>
 
       {isOpen && (

@@ -5,6 +5,7 @@ import { QueryProvider } from "@/providers/query-provider";
 import { AuthProvider } from "@/providers/auth-provider";
 import { ToastProvider } from "@/hooks/use-toast";
 import { Toaster } from "@/components/ui/toast";
+import { RouteAccessGate } from "@/components/auth/route-access-gate";
 import { SessionTimeoutModal } from "@/components/auth/session-timeout-modal";
 
 const inter = Inter({
@@ -33,7 +34,7 @@ export default function RootLayout({
         <QueryProvider>
           <ToastProvider>
             <AuthProvider>
-              {children}
+              <RouteAccessGate>{children}</RouteAccessGate>
               <SessionTimeoutModal />
             </AuthProvider>
             <Toaster />

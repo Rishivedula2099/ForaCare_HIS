@@ -13,6 +13,9 @@ from app.modules.auth.models import User, UserSession
 from app.modules.otp import service as otp_service
 
 
+_DUMMY_PASSWORD_HASH = hash_password("timing-equalisation-placeholder")
+
+
 @dataclass
 class IssuedTokens:
     access_token: str
@@ -26,13 +29,48 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
 
-    if user is None or not verify_password(password, user.password_hash):
-        raise UnauthorizedError("Invalid username or password.")
+    if user is None:
+        # Burn a bcrypt comparison so response time doesn't reveal whether
+        # the username exists.
+        verify_password(password, _DUMMY_PASSWORD_HASH)
+        raise _login_failure("Invalid username or password.", "unknown_user")
+    if not verify_password(password, user.password_hash):
+        raise _login_failure("Invalid username or password.", "bad_password", user)
 
     if not user.is_active:
-        raise UnauthorizedError("This account is inactive. Contact your administrator.")
+        raise _login_failure("This account is inactive. Contact your administrator.", "inactive_account", user)
 
     return user
+
+
+def _login_failure(message: str, reason: str, user: User | None = None) -> UnauthorizedError:
+    """The caller (API layer) audits the failure from `audit_reason`/`audit_user`;
+    the HTTP message stays generic so it can't be used to enumerate accounts."""
+    error = UnauthorizedError(message)
+    error.audit_reason = reason  # type: ignore[attr-defined]
+    error.audit_user = user  # type: ignore[attr-defined]
+    return error
+
+
+async def record_login_failure(
+    db: AsyncSession, username: str, error: UnauthorizedError, *, ip_address: str | None
+) -> None:
+    """P9-B03: security-failure audit. Never stores the password; for an
+    unknown account only the (truncated) attempted username is kept."""
+    from app.modules.audit import service as audit_service
+
+    user: User | None = getattr(error, "audit_user", None)
+    await audit_service.record_event(
+        db,
+        action="auth.login.failed",
+        resource_type="user",
+        resource_id=user.id if user else None,
+        actor_user_id=user.id if user else None,
+        actor_username=username[:100],
+        tenant_id=user.tenant_id if user else None,
+        facility_id=user.facility_id if user else None,
+        after={"reason": getattr(error, "audit_reason", "unknown"), "ip_address": ip_address},
+    )
 
 
 async def issue_tokens(
