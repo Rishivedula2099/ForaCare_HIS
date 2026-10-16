@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.context import (
     get_current_actor_user_id,
     get_current_facility_id,
@@ -50,6 +51,7 @@ async def record_event(
         after=after,
     )
     db.add(entry)
+    metrics.count_audit_action(action)
 
     if commit:
         await db.commit()

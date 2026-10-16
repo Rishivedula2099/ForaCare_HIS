@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.security_monitor import monitor
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import create_token, decode_token, hash_password, hash_token_jti, verify_password
 from app.modules.auth.models import User, UserFacilityMembership, UserSession
@@ -71,6 +72,7 @@ async def record_login_failure(
     from app.modules.audit import service as audit_service
 
     user: User | None = getattr(error, "audit_user", None)
+    alerts = monitor.record_login_failure(ip_address, username)
     await audit_service.record_event(
         db,
         action="auth.login.failed",
@@ -82,6 +84,15 @@ async def record_login_failure(
         facility_id=user.facility_id if user else None,
         after={"reason": getattr(error, "audit_reason", "unknown"), "ip_address": ip_address},
     )
+    for alert in alerts:  # forensic trail of the detector firing (no raw username)
+        await audit_service.record_event(
+            db,
+            action="security.abnormal_auth_activity",
+            resource_type="security_alert",
+            after={"type": alert.type, "count": alert.count, "window_seconds": alert.window_seconds,
+                   "subject": alert.subject},
+            actor_username="security-monitor",
+        )
 
 
 async def list_user_facilities(db: AsyncSession, user: User) -> list[Facility]:
@@ -258,6 +269,7 @@ async def rotate_session(
             resource_id=session.id,
             actor_user_id=user_id,
         )
+        monitor.refresh_token_reuse(str(user_id))
         raise UnauthorizedError("Refresh token reuse detected. Please sign in again.")
 
     result = await db.execute(select(User).where(User.id == user_id))

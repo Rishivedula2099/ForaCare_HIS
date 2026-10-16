@@ -13,6 +13,7 @@ from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request
 
+from app.core import metrics
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ def check_rate_limit(key: str, *, limit: int, window_seconds: int) -> None:
         while bucket and bucket[0] < cutoff:
             bucket.popleft()
         if len(bucket) >= limit:
+            metrics.inc("his_rate_limited_total", {"scope": key.split(":")[0]})
             logger.warning("security.rate_limited key=%s limit=%s/%ss", key.split(":")[0], limit, window_seconds)
             retry_after = max(1, int(bucket[0] + window_seconds - now) + 1)
             raise HTTPException(

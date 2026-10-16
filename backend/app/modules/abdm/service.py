@@ -41,6 +41,7 @@ async def _get_patient(db: AsyncSession, patient_id: uuid.UUID, user: User) -> P
     if patient is None:
         raise NotFoundError("Patient not found.")
     ensure_same_tenant(patient.tenant_id, user)
+    ensure_same_facility(patient.facility_id, user)  # P10-B02: found by the cross-facility matrix
     return patient
 
 

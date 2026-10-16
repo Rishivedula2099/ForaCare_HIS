@@ -35,8 +35,9 @@ def unusable_password_hash() -> str:
     return hash_password(secrets.token_urlsafe(48)[:60])
 
 
-async def issue_token(db: AsyncSession, user: User, purpose: str) -> str:
-    """Creates a fresh token (invalidating older unused ones); returns the raw value."""
+async def issue_token(db: AsyncSession, user: User, purpose: str, *, commit: bool = True) -> str:
+    """Creates a fresh token (invalidating older unused ones); returns the raw value.
+    `commit=False` leaves the transaction open for a caller that must stay atomic."""
     settings = get_settings()
     now = datetime.now(timezone.utc)
     lifetime = (
@@ -51,7 +52,10 @@ async def issue_token(db: AsyncSession, user: User, purpose: str) -> str:
     )
     raw = secrets.token_urlsafe(32)
     db.add(UserToken(user_id=user.id, purpose=purpose, token_hash=_hash(raw), expires_at=now + lifetime))
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return raw
 
 

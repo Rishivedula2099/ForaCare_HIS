@@ -17,7 +17,7 @@ from app.core.responses import error_response
 logger = logging.getLogger(__name__)
 
 # Container health checks hit the API directly over plain HTTP.
-HTTPS_EXEMPT_PATHS = ("/api/v1/health",)
+HTTPS_EXEMPT_PATHS = ("/api/v1/health", "/internal/")
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 

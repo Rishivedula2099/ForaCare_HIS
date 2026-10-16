@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.permissions import ensure_same_tenant
 from app.modules.audit import service as audit_service
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserFacilityMembership
 from app.modules.facilities.models import Facility
 from app.modules.facilities.schemas import FacilityCreateRequest, FacilityOut, FacilityUpdateRequest
 
@@ -44,6 +44,8 @@ async def create_facility(
     facility = Facility(tenant_id=current_user.tenant_id, **payload.model_dump())
     db.add(facility)
     await db.flush()
+    # The creator can switch into the facility they just opened.
+    db.add(UserFacilityMembership(user_id=current_user.id, facility_id=facility.id, is_default=False))
 
     await audit_service.record_event(
         db,
@@ -84,4 +86,28 @@ async def update_facility(
     await db.commit()
     await db.refresh(facility)
 
+    return FacilityOut.model_validate(facility)
+
+
+async def deactivate_facility(
+    db: AsyncSession, facility_id: uuid.UUID, reason: str, current_user: User
+) -> FacilityOut:
+    from app.modules.lifecycle import service as lifecycle
+
+    facility = await _get_facility_or_404(db, facility_id)
+    ensure_same_tenant(facility.tenant_id, current_user)
+    await lifecycle.deactivate_facility(
+        db, facility, reason, current_user, actor_facility_id=current_user.facility_id
+    )
+    await db.refresh(facility)
+    return FacilityOut.model_validate(facility)
+
+
+async def reactivate_facility(db: AsyncSession, facility_id: uuid.UUID, current_user: User) -> FacilityOut:
+    from app.modules.lifecycle import service as lifecycle
+
+    facility = await _get_facility_or_404(db, facility_id)
+    ensure_same_tenant(facility.tenant_id, current_user)
+    await lifecycle.reactivate_facility(db, facility, current_user)
+    await db.refresh(facility)
     return FacilityOut.model_validate(facility)

@@ -29,6 +29,7 @@ def set_tenant_context(
     _tenant_id_ctx.set(tenant_id)
     _facility_id_ctx.set(facility_id)
     _actor_user_id_ctx.set(actor_user_id)
+    note_request(user_id=actor_user_id, tenant_id=tenant_id, facility_id=facility_id)
 
 
 def get_current_tenant_id() -> uuid.UUID | None:
@@ -41,3 +42,22 @@ def get_current_facility_id() -> uuid.UUID | None:
 
 def get_current_actor_user_id() -> uuid.UUID | None:
     return _actor_user_id_ctx.get()
+
+
+# P10-S02: a mutable per-request holder. `get_current_user` runs in a child task
+# (BaseHTTPMiddleware), so ContextVar writes made there are invisible to the
+# access-log middleware; mutating this shared dict is not.
+_request_state_ctx: ContextVar[dict | None] = ContextVar("request_state", default=None)
+
+
+def init_request_state() -> dict:
+    state: dict = {}
+    _request_state_ctx.set(state)
+    return state
+
+
+def note_request(**fields) -> None:
+    """Attach facts (user_id, tenant_id, ...) to the request's access-log line."""
+    state = _request_state_ctx.get()
+    if state is not None:
+        state.update({k: str(v) for k, v in fields.items() if v is not None})

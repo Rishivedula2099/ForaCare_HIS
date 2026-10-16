@@ -7,7 +7,9 @@ from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core import metrics
 from app.core.context import set_tenant_context
+from app.core.security_monitor import monitor
 from app.core.cookies import ACCESS_COOKIE_NAME
 from app.core.database import get_db
 from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
@@ -64,6 +66,7 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
 
 async def _audit_denial(db: AsyncSession, request: Request, user: User, required: list[str]) -> None:
     """P9-B03: a refused privileged call is a security event, not just a 403."""
+    monitor.record_permission_denied(str(user.id))
     await audit_service.record_event(
         db,
         action="security.permission_denied",
@@ -102,6 +105,25 @@ def require_permissions(*permission_codes: str):
     return _dependency
 
 
+PLATFORM_OPERATOR_ROLE = "SUPER_ADMIN"
+PLATFORM_PERMISSION = "tenants.manage"
+
+
+async def require_platform_operator(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """P10-F02: creating hospitals is a platform power. The caller must hold the
+    SUPER_ADMIN role AND the `tenants.manage` permission, so editing a tenant's
+    role/permission assignments cannot turn a hospital admin into an operator."""
+    has_permission = PLATFORM_PERMISSION in {p.code for p in current_user.role.permissions}
+    if current_user.role.code != PLATFORM_OPERATOR_ROLE or not has_permission:
+        await _audit_denial(db, request, current_user, [PLATFORM_OPERATOR_ROLE, PLATFORM_PERMISSION])
+        raise ForbiddenError("Only a platform operator can do this.")
+    return current_user
+
+
 def ensure_same_tenant(resource_tenant_id: uuid.UUID, current_user: User) -> None:
     """Raises if a resource belongs to a tenant other than the caller's.
 
@@ -111,6 +133,7 @@ def ensure_same_tenant(resource_tenant_id: uuid.UUID, current_user: User) -> Non
     for a resource that simply doesn't exist.
     """
     if resource_tenant_id != current_user.tenant_id:
+        metrics.inc("his_auth_events_total", {"event": "cross_tenant_access"})
         logger.warning(
             "security.cross_tenant_access user=%s tenant=%s", current_user.id, current_user.tenant_id
         )
@@ -120,6 +143,7 @@ def ensure_same_tenant(resource_tenant_id: uuid.UUID, current_user: User) -> Non
 def ensure_same_facility(resource_facility_id: uuid.UUID, current_user: User) -> None:
     """Raises if a facility-scoped resource belongs to another facility."""
     if resource_facility_id != current_user.facility_id:
+        metrics.inc("his_auth_events_total", {"event": "cross_facility_access"})
         logger.warning(
             "security.cross_facility_access user=%s facility=%s", current_user.id, current_user.facility_id
         )
