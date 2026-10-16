@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1 import api_v1_router
+from app.api.v1.ops import router as ops_router
 from app.core.config import get_settings
 from app.core.database import dispose_engine
 from app.core.exceptions import register_exception_handlers
@@ -72,3 +73,4 @@ if settings.allowed_host_list and "*" not in settings.allowed_host_list:
 register_exception_handlers(app)
 
 app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
+app.include_router(ops_router)

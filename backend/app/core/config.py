@@ -107,6 +107,25 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     smtp_starttls: bool = True
 
+    # P10-S02: observability and operational controls.
+    # Bearer token for GET /internal/metrics. Outside local the endpoint does not
+    # exist unless this is set (it is never reachable through the public proxy).
+    metrics_token: SecretStr = SecretStr("")
+    # Incoming-webhook URL (Slack/Teams/Mattermost style `{"text": ...}`) for
+    # security and error alerts. It embeds a credential, so it is a secret.
+    alert_webhook_url: SecretStr = SecretStr("")
+    alert_cooldown_seconds: int = 900
+    # Readiness fails when the storage volume has less free space than this.
+    storage_min_free_mb: int = 200
+    # Abnormal-authentication detector (app/core/security_monitor.py): a
+    # `security_alert` is raised when, inside the window, one client IP causes
+    # this many failed sign-ins, tries this many distinct usernames, or one
+    # username collects this many failures.
+    auth_alert_window_seconds: int = 300
+    auth_alert_failed_logins_per_ip: int = 20
+    auth_alert_distinct_users_per_ip: int = 8
+    auth_alert_failed_logins_per_user: int = 6
+
     cookie_domain: str | None = None
     session_cookie_samesite: str = "lax"
 
@@ -211,6 +230,11 @@ class Settings(BaseSettings):
             problems.append(f"ABDM_CLIENT_ID and ABDM_CLIENT_SECRET are required when ABDM_ADAPTER={self.abdm_adapter}")
         if self.abdm_mock_simulate:
             problems.append("ABDM_MOCK_SIMULATE must be empty (it fakes gateway failures)")
+        webhook = self.alert_webhook_url.get_secret_value()
+        if webhook and not webhook.startswith("https://"):
+            problems.append("ALERT_WEBHOOK_URL must be an https URL")
+        if self.alert_cooldown_seconds < 60:
+            problems.append("ALERT_COOLDOWN_SECONDS must be at least 60 (alerts must not flood the channel)")
         if self.smtp_host and not self.smtp_from:
             problems.append("SMTP_FROM is required when SMTP_HOST is set")
         if self.smtp_username and not self.smtp_password.get_secret_value():
@@ -278,7 +302,10 @@ class Settings(BaseSettings):
     def __repr_args__(self):
         """Keep credentials out of repr()/str() and of pydantic's validation
         error text (P9-B04); `database_url` carries the DB password."""
-        masked = {"jwt_access_secret_key", "jwt_refresh_secret_key", "qr_signing_secret_key", "database_url"}
+        masked = {
+            "jwt_access_secret_key", "jwt_refresh_secret_key", "qr_signing_secret_key", "database_url",
+            "metrics_token", "alert_webhook_url",
+        }
         for name, value in super().__repr_args__():
             yield name, "***" if name in masked else value
 

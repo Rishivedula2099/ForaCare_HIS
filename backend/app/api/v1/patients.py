@@ -58,6 +58,7 @@ async def check_duplicates(
         first_name=payload.first_name,
         last_name=payload.last_name,
         dob=payload.dob,
+        facility_id=current_user.facility_id,
     )
     return success_response(
         [patient.model_dump(mode="json") for patient in duplicates],
