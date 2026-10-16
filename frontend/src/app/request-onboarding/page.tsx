@@ -128,7 +128,7 @@ export default function RequestOnboardingPage() {
               </Field>
 
               {/* Honeypot: visually hidden and skipped by keyboard and screen readers. */}
-              <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+              <div aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 overflow-hidden">
                 <label htmlFor="website">Website</label>
                 <input id="website" tabIndex={-1} autoComplete="off" value={form.website} onChange={set("website")} />
               </div>

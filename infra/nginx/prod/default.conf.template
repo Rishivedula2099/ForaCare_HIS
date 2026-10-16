@@ -15,7 +15,7 @@ real_ip_recursive on;
 # nginx.conf; the stock access_log logs full request lines, so each server below
 # overrides it with the query-string-free `his` format.)
 log_format his '$remote_addr [$time_local] "$request_method $uri" $status $body_bytes_sent '
-               '"$http_user_agent" rt=$request_time';
+               '"$http_user_agent" rt=$request_time rid=$request_id';
 # $uri, not $request: query strings carry patient searches and QR signatures
 
 # Request limits ------------------------------------------------------------------
@@ -113,6 +113,9 @@ server {
         proxy_pass http://his_backend;
         include /etc/nginx/proxy_params.conf;
     }
+
+    # Operator-only endpoints (metrics) are for the private network, never the internet.
+    location /internal/ { return 404; }
 
     # API schema/docs are never published.
     location ~ ^/(docs|redoc|openapi\.json)$ { return 404; }

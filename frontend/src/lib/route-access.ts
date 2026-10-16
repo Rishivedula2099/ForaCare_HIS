@@ -62,6 +62,8 @@ export const ROUTE_POLICIES: RoutePolicy[] = [
   // Printing: the backend checks the per-document-type permission.
   { prefix: "/documents", anyOf: ["documents.print", "documents.manage_templates"] },
 
+  // Platform operators (SUPER_ADMIN) create hospitals here; the API re-checks the role.
+  { prefix: "/setup", anyOf: ["tenants.manage"] },
   { prefix: "/roles", anyOf: ["roles.view"] },
   { prefix: "/audit", anyOf: ["audit.view_logs"] },
   { prefix: "/settings", anyOf: ["facilities.manage", "users.manage"] },

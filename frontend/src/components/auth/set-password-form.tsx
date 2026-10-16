@@ -54,7 +54,10 @@ export function SetPasswordForm({
   newLinkLabel,
 }: SetPasswordFormProps) {
   const router = useRouter();
-  const token = useSearchParams().get("token") ?? "";
+  const searchParams = useSearchParams();
+  // Captured once: Next re-renders on history.replaceState below, and the token
+  // must survive being removed from the address bar.
+  const [token] = React.useState(() => searchParams.get("token") ?? "");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [linkInvalid, setLinkInvalid] = React.useState(!token);

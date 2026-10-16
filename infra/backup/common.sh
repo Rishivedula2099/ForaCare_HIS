@@ -32,6 +32,40 @@ STORAGE_VOLUME="${STORAGE_VOLUME:-}"
 STORAGE_DIR="$(unixpath "${STORAGE_DIR:-}")"
 
 log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*" >&2; }
+
+# ---------------------------------------------------------------------------
+# P10-S02: backup outcome markers and failure alerts.
+#
+#   $BACKUP_DIR/.last_success   ISO-8601 UTC time of the last backup that completed
+#   $BACKUP_DIR/.last_failure   "<time> <stage> exit=<n>" of the last failure
+#   $BACKUP_DIR/.last_verified  time of the last backup proven restorable
+#
+# infra/ops/ops_check.py reads these (and the manifests) to alert on a backup that
+# failed OR silently stopped running. ALERT_WEBHOOK_URL, if set, also receives a
+# message the moment a backup or its recovery test fails. The message names the
+# host, stage and exit code only - never data.
+# ---------------------------------------------------------------------------
+now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+notify_alert() {
+  [[ -n "${ALERT_WEBHOOK_URL:-}" ]] || return 0
+  command -v curl >/dev/null 2>&1 || { log "curl not found - cannot send alert"; return 0; }
+  curl -fsS -m 10 -X POST -H 'Content-Type: application/json' \
+    -d "{\"text\": \"[$(hostname)] $1\"}" "$ALERT_WEBHOOK_URL" >/dev/null 2>&1 \
+    || log "alert webhook delivery failed"
+}
+
+record_failure() { # stage exit_code
+  mkdir -p "$BACKUP_DIR" 2>/dev/null || true
+  printf '%s %s exit=%s\n' "$(now_utc)" "$1" "$2" > "$BACKUP_DIR/.last_failure" 2>/dev/null || true
+  notify_alert "ForaCare HIS $1 FAILED (exit $2). Check the backup log and run infra/ops/ops_check.py."
+}
+
+record_success() { # marker
+  mkdir -p "$BACKUP_DIR" 2>/dev/null || true
+  now_utc > "$BACKUP_DIR/.last_$1" 2>/dev/null || true
+  if [[ "$1" == success ]]; then rm -f "$BACKUP_DIR/.last_failure" 2>/dev/null || true; fi
+}
 die() { log "ERROR: $*"; exit 1; }
 
 resolve_pg_container() {
