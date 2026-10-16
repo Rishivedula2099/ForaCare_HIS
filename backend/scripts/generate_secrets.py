@@ -6,8 +6,9 @@
 Writes high-entropy values (secrets.token_urlsafe) to one file per secret:
 
     db_password, database_url, jwt_access_secret_key, jwt_refresh_secret_key,
-    qr_signing_secret_key                       <- generated
-    smtp_password, abdm_client_secret           <- created empty; fill in by hand
+    qr_signing_secret_key, metrics_token        <- generated
+    smtp_password, abdm_client_secret,
+    alert_webhook_url                           <- created empty; fill in by hand
 
 Existing files are NEVER overwritten (replacing db_password would lock you out of
 the database; replacing a JWT key signs everyone out), unless you pass
@@ -21,8 +22,14 @@ import stat
 import sys
 from pathlib import Path
 
-GENERATED = ("db_password", "jwt_access_secret_key", "jwt_refresh_secret_key", "qr_signing_secret_key")
-MANUAL = ("smtp_password", "abdm_client_secret")
+GENERATED = (
+    "db_password",
+    "jwt_access_secret_key",
+    "jwt_refresh_secret_key",
+    "qr_signing_secret_key",
+    "metrics_token",
+)
+MANUAL = ("smtp_password", "abdm_client_secret", "alert_webhook_url")
 
 
 def write_secret(path: Path, value: str) -> None:

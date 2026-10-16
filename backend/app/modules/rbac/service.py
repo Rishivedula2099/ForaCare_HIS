@@ -3,10 +3,13 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.modules.audit import service as audit_service
 from app.modules.rbac.models import Permission, Role
 from app.modules.rbac.schemas import PermissionOut, RoleDetailOut, RoleSummaryOut
+
+PLATFORM_OPERATOR_ROLE = "SUPER_ADMIN"
+PLATFORM_ONLY_PERMISSIONS = {"tenants.manage"}
 
 
 async def list_roles(db: AsyncSession) -> list[RoleSummaryOut]:
@@ -62,6 +65,17 @@ async def set_role_permissions(
     permissions = result.scalars().all()
     if len(permissions) != len(set(permission_ids)):
         raise NotFoundError("One or more permission ids were not found.")
+
+    # P10-F02: roles are shared by every hospital, and a hospital admin holds
+    # `roles.manage`. Without these two rules they could grant themselves
+    # `tenants.manage` (platform power) or strip the platform operator role.
+    if role.code == PLATFORM_OPERATOR_ROLE:
+        raise ForbiddenError("The platform operator role cannot be modified.")
+    platform_only = {p.code for p in permissions} & PLATFORM_ONLY_PERMISSIONS
+    if platform_only:
+        raise ForbiddenError(
+            "Platform permissions (" + ", ".join(sorted(platform_only)) + ") cannot be assigned to this role."
+        )
 
     role.permissions = permissions
     await db.flush()
