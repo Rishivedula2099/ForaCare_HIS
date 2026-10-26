@@ -10,6 +10,7 @@ from app.modules.abdm import service
 from app.modules.abdm.factory import get_abdm_adapter
 from app.modules.abdm.schemas import ConsentCreateRequest, OtpRequest, VerifyRequest
 from app.modules.auth.models import User
+from app.modules.audit import service as audit_service
 
 router = APIRouter(prefix="/abdm", tags=["abdm"])
 
@@ -32,9 +33,19 @@ async def abdm_status(
 async def request_otp(
     payload: OtpRequest,
     request: Request,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permissions("patients.link_abha")),
 ):
-    return _ok(request, await service.request_otp(payload.auth_method, payload.identifier))
+    result = await service.request_otp(payload.auth_method, payload.identifier)
+    # Never record the identifier itself - it is an Aadhaar/ABHA number.
+    await audit_service.record_event(
+        db,
+        action="abha.otp_requested",
+        resource_type="abha_otp",
+        resource_id=result.transaction_id,
+        after={"auth_method": str(payload.auth_method)},
+    )
+    return _ok(request, result)
 
 
 @router.get(

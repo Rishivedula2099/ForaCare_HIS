@@ -19,13 +19,72 @@ from alembic import op
 import sqlalchemy as sa
 
 from app.core.security import hash_password
-from app.modules.rbac.constants import PERMISSION_CATALOG, ROLE_PERMISSION_SEED, SYSTEM_ROLE_NAMES
+from app.modules.rbac.constants import SYSTEM_ROLE_NAMES, SystemRole
 
 # revision identifiers, used by Alembic.
 revision: str = 'e7c1f4a2b856'
 down_revision: Union[str, None] = 'd4b2e6a91f03'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+
+# P10-B01: frozen snapshot of the catalog as it stood when this migration was
+# written (2026-09-08). It used to import the *live* constants, so every
+# permission added later was seeded here AND by its own migration, and a fresh
+# database failed with a duplicate key. Later migrations add/rename the rest.
+PERMISSION_CATALOG: list[tuple[str, str, str]] = [
+    ("patients.view", "patients", "View patient records"),
+    ("patients.manage", "patients", "Register and update patient records"),
+    ("opd.manage_queue", "opd", "Manage OPD queue and appointments"),
+    ("ipd.manage_beds", "ipd", "Manage IPD beds and admissions"),
+    ("billing.create_invoice", "billing", "Create invoices and charges"),
+    ("billing.collect_payment", "billing", "Collect and reconcile payments"),
+    ("lab.accession_sample", "lab", "Accession and track lab samples"),
+    ("lab.enter_results", "lab", "Enter lab test results"),
+    ("lab.verify_results", "lab", "Technically verify lab results"),
+    ("lab.approve_reports", "lab", "Approve and release final lab reports"),
+    ("documents.print", "documents", "Print and generate documents"),
+    ("audit.view_logs", "audit", "View audit trails and access logs"),
+    ("users.manage", "settings", "Manage staff user accounts"),
+    ("roles.view", "settings", "View roles and permissions"),
+    ("roles.manage", "settings", "Manage role-permission assignments"),
+    ("facilities.manage", "settings", "Configure facilities and departments"),
+    ("tenants.manage", "settings", "Manage tenants (multi-hospital setup)"),
+    ("system.diagnostics", "settings", "View system diagnostics and configuration"),
+]
+
+ROLE_PERMISSION_SEED: dict[str, list[str]] = {
+    SystemRole.SUPER_ADMIN: [code for code, _, _ in PERMISSION_CATALOG],
+    SystemRole.HOSPITAL_ADMIN: [
+        "users.manage",
+        "roles.view",
+        "roles.manage",
+        "facilities.manage",
+        "patients.view",
+        "audit.view_logs",
+    ],
+    SystemRole.DOCTOR: [
+        "patients.view",
+        "patients.manage",
+        "opd.manage_queue",
+        "ipd.manage_beds",
+        "documents.print",
+    ],
+    SystemRole.NURSE: ["patients.view", "ipd.manage_beds", "documents.print"],
+    SystemRole.RECEPTIONIST: [
+        "patients.view",
+        "patients.manage",
+        "opd.manage_queue",
+        "documents.print",
+    ],
+    SystemRole.BILLING_CASHIER: [
+        "billing.create_invoice",
+        "billing.collect_payment",
+        "documents.print",
+    ],
+    SystemRole.LAB_TECH: ["lab.accession_sample", "lab.enter_results", "documents.print"],
+    SystemRole.LAB_APPROVER: ["lab.verify_results", "lab.approve_reports", "documents.print"],
+    SystemRole.AUDITOR: ["audit.view_logs"],
+}
 
 DEMO_PASSWORD = "Demo@123"
 TENANT_ID = "11111111-1111-1111-1111-111111111111"
@@ -79,28 +138,32 @@ def upgrade() -> None:
                 {"role_id": role_ids[role_code], "permission_id": permission_ids[permission_code]},
             )
 
-    connection.execute(
-        sa.text(
-            """
-            INSERT INTO users
-                (id, tenant_id, facility_id, username, email, password_hash, full_name, role_id,
-                 is_active, created_at, updated_at)
-            VALUES
-                (:id, :tenant_id, :facility_id, :username, :email, :password_hash, :full_name, :role_id,
-                 true, now(), now())
-            """
-        ),
-        {
-            "id": BILLING_CASHIER_USER_ID,
-            "tenant_id": TENANT_ID,
-            "facility_id": FACILITY_MAIN_ID,
-            "username": "billing.cashier",
-            "email": "billing.cashier@foracare-his.com",
-            "password_hash": hash_password(DEMO_PASSWORD),
-            "full_name": "Kavita Menon",
-            "role_id": role_ids["BILLING_CASHIER"],
-        },
-    )
+    # P10-B01: the demo cashier login only exists in SEED_DEMO_DATA dev setups.
+    from app.core.demo_seed import demo_seed_enabled
+
+    if demo_seed_enabled():
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO users
+                    (id, tenant_id, facility_id, username, email, password_hash, full_name, role_id,
+                     is_active, created_at, updated_at)
+                VALUES
+                    (:id, :tenant_id, :facility_id, :username, :email, :password_hash, :full_name, :role_id,
+                     true, now(), now())
+                """
+            ),
+            {
+                "id": BILLING_CASHIER_USER_ID,
+                "tenant_id": TENANT_ID,
+                "facility_id": FACILITY_MAIN_ID,
+                "username": "billing.cashier",
+                "email": "billing.cashier@foracare-his.com",
+                "password_hash": hash_password(DEMO_PASSWORD),
+                "full_name": "Kavita Menon",
+                "role_id": role_ids["BILLING_CASHIER"],
+            },
+        )
 
     connection.execute(
         sa.text(

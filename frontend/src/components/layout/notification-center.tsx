@@ -1,13 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  Bell,
-  FlaskConical,
-  BedDouble,
-  Receipt,
-  CheckCheck,
-} from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,44 +19,19 @@ interface NotificationItem {
   tone: "info" | "warning" | "success";
 }
 
-const MOCK_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: "n1",
-    title: "Lab result pending approval",
-    description: "CBC panel for FC01-202609-000102 is awaiting pathologist sign-off.",
-    time: "5 min ago",
-    read: false,
-    icon: FlaskConical,
-    tone: "warning",
-  },
-  {
-    id: "n2",
-    title: "Bed released — Ward B, Bed 12",
-    description: "Housekeeping marked Ward B / Bed 12 as ready for allocation.",
-    time: "22 min ago",
-    read: false,
-    icon: BedDouble,
-    tone: "success",
-  },
-  {
-    id: "n3",
-    title: "Cashier shift closing reminder",
-    description: "Shift #1 has been open for 8 hours. Reconcile collections before handover.",
-    time: "1 hr ago",
-    read: true,
-    icon: Receipt,
-    tone: "info",
-  },
-];
-
 const TONE_STYLES: Record<NotificationItem["tone"], string> = {
   info: "text-blue-600 bg-blue-50",
   warning: "text-amber-600 bg-amber-50",
   success: "text-emerald-600 bg-emerald-50",
 };
 
+// P10-B01: there is no notifications service yet, so the list starts empty
+// instead of showing invented lab/bed/cashier alerts about patients that do
+// not exist. Wire this to the API when one is built.
+const NO_NOTIFICATIONS: NotificationItem[] = [];
+
 export function NotificationCenter() {
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState(NO_NOTIFICATIONS);
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const markAllRead = () => {

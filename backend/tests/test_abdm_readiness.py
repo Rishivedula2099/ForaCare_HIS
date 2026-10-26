@@ -1,5 +1,6 @@
 """P8-B06 stage 3 (production readiness): the rollout gate itself."""
 import pytest
+from pydantic import SecretStr
 
 from app.core.config import Settings
 from app.modules.abdm.readiness import evaluate_readiness, is_ready
@@ -17,7 +18,14 @@ PRODUCTION = dict(
 
 
 def _settings(**overrides) -> Settings:
-    return Settings(_env_file=None, **{**PRODUCTION, **overrides})
+    """Built with `model_construct` (no startup validation): these tests feed the
+    readiness gate deliberately broken configurations that Settings itself would
+    refuse to start with."""
+    values = {**PRODUCTION, **overrides}
+    for secret in ("abdm_client_secret",):
+        if secret in values and not isinstance(values[secret], SecretStr):
+            values[secret] = SecretStr(values[secret])
+    return Settings.model_construct(**values)
 
 
 def _failed(settings: Settings, target: str = "production") -> set[str]:

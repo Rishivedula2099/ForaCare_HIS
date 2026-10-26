@@ -50,7 +50,7 @@ import {
   INDIAN_STATES_AND_UTS,
   Patient,
 } from "@/types/patient";
-import { calculateAgeFromDob, calculateDobFromAge } from "@/lib/patient-store";
+import { calculateAgeFromDob, calculateDobFromAge } from "@/lib/patient-utils";
 import {
   checkDuplicates as apiCheckDuplicates,
   createPatient,
@@ -61,7 +61,6 @@ import {
 } from "@/lib/patient-api";
 import { ApiError } from "@/types/api";
 import { PhotoCapture } from "@/components/patients/photo-capture";
-import { AbhaCard } from "@/components/patients/abha-card";
 import { DuplicateAlert } from "@/components/patients/duplicate-alert";
 import { RegistrationSuccessDialog } from "@/components/patients/registration-success-dialog";
 import { useAuthContext } from "@/providers/auth-provider";
@@ -70,7 +69,7 @@ import { ShieldAlert } from "lucide-react";
 export default function PatientRegistrationPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { hasPermission } = useAuthContext();
+  const { hasPermission, facility } = useAuthContext();
   const [isPending, startTransition] = useTransition();
 
   const [duplicates, setDuplicates] = useState<Patient[]>([]);
@@ -110,9 +109,6 @@ export default function PatientRegistrationPage() {
       identityType: "AADHAAR",
       identityNumber: "",
       photoUrl: "",
-      abhaNumber: "",
-      abhaAddress: "",
-      abhaStatus: "UNVERIFIED",
     },
     mode: "onBlur",
   });
@@ -126,9 +122,6 @@ export default function PatientRegistrationPage() {
   const watchedFirstName = watch("firstName");
   const watchedLastName = watch("lastName");
   const watchedPhotoUrl = watch("photoUrl");
-  const watchedAbhaNumber = watch("abhaNumber");
-  const watchedAbhaAddress = watch("abhaAddress");
-  const watchedAbhaStatus = watch("abhaStatus");
 
   const isMinor = (watchedAgeYears || 0) < 18;
 
@@ -913,23 +906,16 @@ export default function PatientRegistrationPage() {
               </CardContent>
             </Card>
 
-            {/* Section 5: ABHA / ABDM Integration */}
-            <AbhaCard
-              abhaNumber={watchedAbhaNumber || ""}
-              abhaAddress={watchedAbhaAddress || ""}
-              status={watchedAbhaStatus || "UNVERIFIED"}
-              mobile={watchedMobile || ""}
-              onAbhaChange={({ abhaNumber, abhaAddress, status }) => {
-                setValue("abhaNumber", abhaNumber || "");
-                setValue("abhaAddress", abhaAddress || "");
-                setValue("abhaStatus", status);
-              }}
-            />
+            {/* ABHA is verified and linked through the ABDM gateway from Patient 360 once the
+                patient exists - never self-declared on this form. */}
+            <p className="text-xs text-slate-500 px-1">
+              ABHA / ABDM: after registration, open the patient&apos;s record to verify and link their ABHA.
+            </p>
 
             {/* Bottom Sticky Action Bar */}
             <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm sticky bottom-4 z-10">
               <div className="text-xs text-slate-500">
-                Facility: <strong>ForaCare City Hospital (FC01)</strong> • Desk: <strong>Registration</strong>
+                Facility: <strong>{facility ? `${facility.name} (${facility.facility_code})` : "-"}</strong> • Desk: <strong>Registration</strong>
               </div>
 
               <div className="flex items-center gap-2">

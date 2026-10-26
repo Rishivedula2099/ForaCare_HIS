@@ -55,12 +55,21 @@ def test_hospital_admin_can_create_and_update_own_tenant_facility(client):
     facility = create_response.json()["data"]
     assert facility["is_active"] is True
 
+    # P10-B02: activation state is no longer a plain field of PATCH (it is ignored
+    # there); it changes only through the guarded, audited lifecycle endpoints.
     update_response = client.patch(
         f"/api/v1/facilities/{facility['id']}",
-        json={"is_active": False},
+        json={"name": "ForaCare Test Branch (renamed)", "is_active": False},
     )
     assert update_response.status_code == 200
-    assert update_response.json()["data"]["is_active"] is False
+    assert update_response.json()["data"]["name"] == "ForaCare Test Branch (renamed)"
+    assert update_response.json()["data"]["is_active"] is True
+
+    deactivated = client.post(
+        f"/api/v1/facilities/{facility['id']}/deactivate", json={"reason": "Test branch closed"}
+    )
+    assert deactivated.status_code == 200
+    assert deactivated.json()["data"]["is_active"] is False
 
 
 def test_tenants_endpoint_requires_super_admin(client):

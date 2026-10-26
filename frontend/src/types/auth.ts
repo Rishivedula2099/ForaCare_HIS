@@ -12,6 +12,7 @@ export interface Facility {
   tenant_id: string;
   name: string;
   facility_code: string;
+  facility_type?: "hospital" | "clinic" | "medical_centre";
   address?: string;
   phone?: string;
   timezone: string;
@@ -116,6 +117,25 @@ export interface ResetPasswordInput {
   confirm_password: string;
 }
 
+/**
+ * Roles are rows in the database - a hospital can add its own - so a code
+ * missing from `ROLE_METADATA_MAP` must degrade gracefully, never crash.
+ */
+export function getRoleMetadata(role: string): RoleMetadata {
+  return (
+    (ROLE_METADATA_MAP as Record<string, RoleMetadata | undefined>)[role] ?? {
+      label: role
+        .toLowerCase()
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" "),
+      description: "Custom role defined by your hospital.",
+      badgeClassName: "bg-slate-100 text-slate-700 border-slate-200",
+      keyPermissions: [],
+    }
+  );
+}
+
 export interface RoleMetadata {
   label: string;
   description: string;
@@ -180,18 +200,39 @@ export const ROLE_METADATA_MAP: Record<UserRole, RoleMetadata> = {
   },
 };
 
+/** Machine-readable reasons a sign-in can fail (mirrors backend error codes). */
+export type LoginFailureCode =
+  | "INVALID_CREDENTIALS"
+  | "ACCOUNT_DISABLED"
+  | "NO_FACILITY_ACCESS"
+  | "FACILITY_NOT_ASSIGNED"
+  | "TOO_MANY_REQUESTS"
+  | "NETWORK_ERROR"
+  | "UNKNOWN";
+
+export class AuthError extends Error {
+  code: LoginFailureCode;
+
+  constructor(message: string, code: LoginFailureCode) {
+    super(message);
+    this.name = "AuthError";
+    this.code = code;
+  }
+}
+
+/** The signed-in user's session as the backend describes it. */
 export interface AuthContextType {
   user: AuthUser | null;
   tenant: Tenant | null;
   facility: Facility | null;
+  /** Facilities the user holds a membership in (server-provided). */
   availableFacilities: Facility[];
   isAuthenticated: boolean;
   isLoading: boolean;
-  isUsingMockAuth: boolean;
-  login: (credentials: LoginCredentials) => Promise<void>;
-  logout: () => Promise<void>;
-  switchFacility: (facilityId: string) => void;
+  /** Resolves with the signed-in user so callers can route by permissions. */
+  login: (credentials: LoginCredentials) => Promise<AuthUser>;
+  logout: (reason?: "idle" | "manual") => Promise<void>;
+  switchFacility: (facilityId: string) => Promise<void>;
   changePassword: (input: ChangePasswordInput) => Promise<void>;
-  hasRole: (roles?: UserRole[]) => boolean;
   hasPermission: (permission: string) => boolean;
 }

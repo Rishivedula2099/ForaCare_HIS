@@ -1,5 +1,5 @@
 import { UserRole } from "@/lib/constants";
-import { ROLE_METADATA_MAP } from "@/types/auth";
+import { getRoleMetadata } from "@/types/auth";
 import { cn } from "@/lib/utils";
 
 interface RoleBadgeProps {
@@ -8,7 +8,7 @@ interface RoleBadgeProps {
 }
 
 export function RoleBadge({ role, className }: RoleBadgeProps) {
-  const meta = ROLE_METADATA_MAP[role];
+  const meta = getRoleMetadata(role);
 
   return (
     <span

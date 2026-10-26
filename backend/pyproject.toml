@@ -36,7 +36,6 @@ dependencies = [
     # (`playwright install chromium`; done in the Dockerfile).
     "jinja2>=3.1.0",
     "playwright>=1.48.0",
-    "httpx>=0.27.0",
 ]
 
 [project.optional-dependencies]

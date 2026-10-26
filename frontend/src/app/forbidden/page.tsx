@@ -27,10 +27,7 @@ export default function ForbiddenPage() {
             )}
             <div className="flex flex-wrap justify-center gap-2">
               <Button asChild size="sm">
-                <Link href="/">Return to Dashboard</Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <a href="mailto:it-support@foracare-his.com">Contact IT Administrator</a>
+                <Link href="/dashboard">Return to Dashboard</Link>
               </Button>
             </div>
           </div>

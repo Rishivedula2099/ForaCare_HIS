@@ -41,6 +41,7 @@ async def _get_patient(db: AsyncSession, patient_id: uuid.UUID, user: User) -> P
     if patient is None:
         raise NotFoundError("Patient not found.")
     ensure_same_tenant(patient.tenant_id, user)
+    ensure_same_facility(patient.facility_id, user)  # P10-B02: found by the cross-facility matrix
     return patient
 
 
@@ -111,6 +112,14 @@ async def verify(
     try:
         profile = await get_abdm_adapter().verify_otp(transaction_id=transaction_id, otp=otp)
     except AbdmError as exc:
+        await db.rollback()
+        await audit_service.record_event(
+            db,
+            action="abha.verification_failed",
+            resource_type="patient",
+            resource_id=patient_id,
+            after={"error_code": exc.code},
+        )
         raise _gateway_error(exc) from exc
 
     in_use = (

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.core.permissions import ensure_same_facility, ensure_same_tenant
+from app.core.sql import LIKE_ESCAPE, like_contains
 from app.modules.audit import service as audit_service
 from app.modules.auth.models import User
 from app.modules.departments.models import Department
@@ -41,11 +42,11 @@ async def list_doctors(
         Doctor.facility_id == current_user.facility_id,
     )
     if name:
-        pattern = f"%{name}%"
+        pattern = like_contains(name)
         stmt = stmt.where(
-            (Doctor.full_name.ilike(pattern))
-            | (Doctor.doctor_code.ilike(pattern))
-            | (Doctor.specialization.ilike(pattern))
+            (Doctor.full_name.ilike(pattern, escape=LIKE_ESCAPE))
+            | (Doctor.doctor_code.ilike(pattern, escape=LIKE_ESCAPE))
+            | (Doctor.specialization.ilike(pattern, escape=LIKE_ESCAPE))
         )
     if department_id:
         stmt = stmt.where(Doctor.department_id == department_id)

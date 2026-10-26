@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.context import (
     get_current_actor_user_id,
     get_current_facility_id,
@@ -50,6 +51,7 @@ async def record_event(
         after=after,
     )
     db.add(entry)
+    metrics.count_audit_action(action)
 
     if commit:
         await db.commit()
@@ -79,3 +81,12 @@ async def list_audit_logs(
 
     result = await db.execute(stmt)
     return [AuditLogOut.model_validate(row) for row in result.scalars().all()]
+
+
+async def record_view(
+    db: AsyncSession, *, action: str, resource_type: str, resource_id: str | uuid.UUID
+) -> AuditLog:
+    """P9-B03: audits a read of a clinical/financial record (who looked at
+    what), mirroring `patients.viewed`. Called from the API handler - not the
+    service getter - so internal reuse of a getter doesn't log phantom views."""
+    return await record_event(db, action=action, resource_type=resource_type, resource_id=resource_id)
