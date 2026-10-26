@@ -109,3 +109,14 @@ describe("post-login routing by effective permissions", () => {
     expect(accessibleModules(as("documents.print"), prod).map((m) => m.href)).toEqual(["/documents"]);
   });
 });
+
+describe("hospital setup route", () => {
+  it("is limited to holders of tenants.manage", () => {
+    expect(decideRoute("/setup", as("roles.view", "users.manage", "facilities.manage"), prod)).toBe("forbidden");
+    expect(decideRoute("/setup", as("tenants.manage"), prod)).toBe("allow");
+  });
+
+  it("is not public", () => {
+    expect(isPublicRoute("/setup")).toBe(false);
+  });
+});

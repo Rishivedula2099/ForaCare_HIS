@@ -71,10 +71,13 @@ async def find_duplicate_patients(
     first_name: str | None = None,
     last_name: str | None = None,
     dob: date | None = None,
+    facility_id: uuid.UUID | None = None,
 ) -> list[PatientOut]:
     """Mirrors the frontend's `checkDuplicates`: mobile match, identity-number
     match, or name + birth-year match - see REQ-PAT-02."""
     matches: dict[uuid.UUID, Patient] = {}
+    # Detection is organisation-wide, but callers that RETURN records pass their own
+    # facility_id so another facility's patient details are never disclosed.
 
     if mobile:
         result = await db.execute(
@@ -106,7 +109,11 @@ async def find_duplicate_patients(
         for patient in result.scalars().unique().all():
             matches[patient.id] = patient
 
-    return [PatientOut.model_validate(patient) for patient in matches.values()]
+    return [
+        PatientOut.model_validate(patient)
+        for patient in matches.values()
+        if facility_id is None or patient.facility_id == facility_id
+    ]
 
 
 async def list_patients(
@@ -156,6 +163,7 @@ async def _get_patient_or_404(db: AsyncSession, patient_id: uuid.UUID) -> Patien
 async def get_patient(db: AsyncSession, patient_id: uuid.UUID, current_user: User) -> PatientOut:
     patient = await _get_patient_or_404(db, patient_id)
     ensure_same_tenant(patient.tenant_id, current_user)
+    ensure_same_facility(patient.facility_id, current_user)  # P10-B02: the list, OPD and billing already scope by facility
 
     await audit_service.record_event(
         db,
@@ -323,6 +331,7 @@ async def update_patient(
 ) -> PatientOut:
     patient = await _get_patient_or_404(db, patient_id)
     ensure_same_tenant(patient.tenant_id, current_user)
+    ensure_same_facility(patient.facility_id, current_user)
 
     before = PatientOut.model_validate(patient).model_dump(mode="json")
 

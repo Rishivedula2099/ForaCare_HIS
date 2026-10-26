@@ -48,8 +48,8 @@ def page(context):
 
 def sign_in(page, username, password=PASSWORD):
     page.goto(f"{BASE}/login")
-    page.get_by_placeholder("e.g. dr.priya").fill(username)
-    page.locator('input[type="password"]').fill(password)
+    page.get_by_label("Username or Email").fill(username)
+    page.get_by_label("Password", exact=True).fill(password)
     page.get_by_role("button", name="Sign In").click()
 
 
@@ -89,7 +89,7 @@ def test_login_sets_httponly_cookies_and_stores_no_token_in_js(page, context):
     assert "refresh_token" not in stores and "access_token" not in stores
 
 
-def test_login_page_demo_helpers_do_not_leak_tokens_in_urls(page):
+def test_signing_in_does_not_leak_tokens_in_urls(page):
     signed_in(page, "dr.priya")
     assert "token" not in page.url.lower()
 
@@ -171,8 +171,8 @@ def test_revoked_session_cannot_refresh(page, context):
 
 def test_login_redirect_param_cannot_leave_the_site(page):
     page.goto(f"{BASE}/login?redirect=//evil.example.com")
-    page.get_by_placeholder("e.g. dr.priya").fill("dr.priya")
-    page.locator('input[type="password"]').fill(PASSWORD)
+    page.get_by_label("Username or Email").fill("dr.priya")
+    page.get_by_label("Password", exact=True).fill(PASSWORD)
     page.get_by_role("button", name="Sign In").click()
     page.wait_for_url(lambda url: "/login" not in url)
     assert page.url.startswith(BASE)
@@ -269,21 +269,41 @@ def test_design_system_page_is_dev_only_not_a_role_bypass(page):
 # --- facility switching ------------------------------------------------------------------------
 
 
-def test_facility_switcher_cannot_relabel_a_real_session(page, context):
+def test_single_facility_account_gets_no_switcher_and_cannot_switch_elsewhere(page, context):
     signed_in(page, "dr.priya")
-    me_before = page.request.get(f"{API}/auth/me").json()["data"]["facility"]["id"]
+    me_before = page.request.get(f"{API}/auth/me").json()["data"]
+    assert len(me_before["facilities"]) == 1
 
-    page.locator("header button", has_text="FC-").first.click()
-    options = page.locator("header [class*='z-50'] button")
-    shown = options.count()
-    assert shown <= 1, "a real session must only offer its own facility"
+    # The header shows the facility but offers no way to change it.
+    expect(page.locator("header button", has_text="FC-").first).to_be_disabled()
 
-    # Even if a switch were attempted, the server-side facility is unchanged.
-    me_after = page.request.get(f"{API}/auth/me").json()["data"]["facility"]["id"]
-    assert me_before == me_after
-    expect(page.locator("header")).to_contain_text(
-        page.request.get(f"{API}/auth/me").json()["data"]["facility"]["name"]
-    )
+    # Another tenant's facility cannot be switched to, whatever the UI does.
+    other = page.request.post(f"{API}/auth/switch-facility", data={"facility_id": "00000000-0000-0000-0000-000000000000"})
+    assert other.status == 403
+    me_after = page.request.get(f"{API}/auth/me").json()["data"]
+    assert me_before["facility"]["id"] == me_after["facility"]["id"]
+    expect(page.locator("header")).to_contain_text(me_after["facility"]["name"])
+
+
+def test_landing_page_is_public_and_shows_no_private_data(page):
+    page.goto(f"{BASE}/")
+    expect(page.get_by_role("link", name="Sign in").first).to_be_visible()
+    expect(page.get_by_role("link", name="Request onboarding").first).to_be_visible()
+    assert page.locator("aside").count() == 0
+    assert page.request.get(f"{API}/patients").status == 401
+
+
+def test_sign_in_lands_on_the_dashboard_for_the_users_permissions(page):
+    signed_in(page, "lab.tech")
+    page.wait_for_url(re.compile(r"/dashboard"))
+    expect(page.locator("main").get_by_role("link", name="Laboratory")).to_be_visible()
+    expect(page.locator("main").get_by_role("link", name="Roles & Permissions")).to_have_count(0)
+
+
+def test_invalid_credentials_show_an_error_and_stay_on_login(page):
+    sign_in(page, "dr.priya", "definitely-wrong")
+    expect(page.get_by_text("Invalid username or password.")).to_be_visible()
+    assert "/login" in page.url
 
 
 def test_other_tenants_data_is_unreachable_from_the_browser_session(page):

@@ -12,6 +12,7 @@ export interface Facility {
   tenant_id: string;
   name: string;
   facility_code: string;
+  facility_type?: "hospital" | "clinic" | "medical_centre";
   address?: string;
   phone?: string;
   timezone: string;

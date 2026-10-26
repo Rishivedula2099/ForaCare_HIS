@@ -19,6 +19,8 @@ resolve_pg_container
 SCRATCH="forahis_verify_$(date -u +%Y%m%d%H%M%S)"
 WORK="$(mktemp -d)"
 cleanup() {
+  rc=$?
+  if [[ $rc -ne 0 ]]; then record_failure "backup verification" "$rc"; fi
   psql_in -d postgres -c "DROP DATABASE IF EXISTS \"$SCRATCH\";" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
@@ -64,4 +66,5 @@ if [[ -f "$BACKUP/files.tar.gz" ]]; then
   log "files OK: $GOT files extracted"
 fi
 
+record_success verified
 log "RECOVERY CHECK PASSED for $BACKUP"

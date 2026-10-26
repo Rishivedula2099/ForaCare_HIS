@@ -1,0 +1,107 @@
+# P10-S02: example Prometheus alert rules for ForaCare HIS.
+#
+# Scrape the API on the PRIVATE network (never through the public proxy):
+#
+#   scrape_configs:
+#     - job_name: foracare-his
+#       metrics_path: /internal/metrics
+#       authorization: { credentials_file: /etc/prometheus/his_metrics_token }   # = secrets/metrics_token
+#       static_configs: [{ targets: ["backend:8000"] }]
+#       # The API only answers to its allowed Host names; "localhost" is always allowed.
+#       params: {}
+#       relabel_configs: [{ target_label: __param_host, replacement: localhost }]
+#
+# Backups, disk and TLS are outside the API and are covered by infra/ops/ops_check.py.
+# Tune thresholds to your traffic; these are starting points. Every alert names the
+# first thing to do in docs/incident-response.md.
+groups:
+  - name: foracare-his-availability
+    rules:
+      - alert: HisNotReady
+        expr: min by (check) (his_ready) == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Readiness check {{ $labels.check }} is failing"
+          runbook: "incident-response.md#readiness-failing"
+
+      - alert: HisApiDown
+        expr: up{job="foracare-his"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "The API is not answering scrapes"
+          runbook: "incident-response.md#api-down"
+
+  - name: foracare-his-errors
+    rules:
+      - alert: HisUnhandledErrors
+        expr: increase(his_unhandled_exceptions_total[10m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Unhandled exceptions: find the unhandled_exception log event (error_fingerprint groups repeats)"
+          runbook: "incident-response.md#application-errors"
+
+      - alert: HisUnhandledErrorBurst
+        expr: increase(his_unhandled_exceptions_total[10m]) >= 5
+        labels: { severity: critical }
+        annotations:
+          summary: "5+ unhandled exceptions in 10 minutes"
+          runbook: "incident-response.md#application-errors"
+
+      - alert: HisServerErrorRate
+        expr: >
+          sum(rate(his_http_requests_total{status="5xx"}[5m]))
+            / clamp_min(sum(rate(his_http_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "More than 5% of requests are failing with 5xx"
+          runbook: "incident-response.md#application-errors"
+
+      - alert: HisSlowRequests
+        expr: >
+          histogram_quantile(0.95, sum by (le) (rate(his_http_request_duration_seconds_bucket[5m]))) > 2.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 request latency above 2.5 s for 10 minutes"
+          runbook: "incident-response.md#slow-system"
+
+  - name: foracare-his-security
+    rules:
+      - alert: HisSecurityAlert
+        expr: increase(his_security_alerts_total[5m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Abnormal authentication activity ({{ $labels.type }}): see the security_alert log event"
+          runbook: "incident-response.md#abnormal-authentication-activity"
+
+      - alert: HisRefreshTokenReuse
+        expr: increase(his_auth_events_total{event="refresh_token_reuse"}[15m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "A refresh token was replayed - a session may have been stolen"
+          runbook: "incident-response.md#abnormal-authentication-activity"
+
+      - alert: HisCrossTenantAccessAttempts
+        expr: >
+          increase(his_auth_events_total{event=~"cross_tenant_access|cross_facility_access"}[15m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "A user tried to read another hospital's or facility's records"
+          runbook: "incident-response.md#abnormal-authentication-activity"
+
+      - alert: HisFailedLoginSpike
+        expr: increase(his_auth_events_total{event="login_failed"}[5m]) > 50
+        labels: { severity: warning }
+        annotations:
+          summary: "50+ failed sign-ins in 5 minutes"
+          runbook: "incident-response.md#abnormal-authentication-activity"
+
+      - alert: HisRateLimiting
+        expr: increase(his_rate_limited_total[10m]) > 100
+        labels: { severity: warning }
+        annotations:
+          summary: "Heavy rate-limiting (possible brute force or a misbehaving client)"
+          runbook: "incident-response.md#abnormal-authentication-activity"

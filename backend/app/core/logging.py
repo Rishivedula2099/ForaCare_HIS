@@ -85,6 +85,29 @@ class SecretRedactionFilter(logging.Filter):
         return True
 
 
+def log_event(logger: logging.Logger, level: int, event: str, *, exc_info=None, **fields) -> None:
+    """P10-S02: a structured log line. `event` is a stable, machine-readable name
+    (alert rules key on it); `fields` are scalar facts. Callers pass identifiers
+    and counts only - never request bodies, names, credentials or patient data.
+    String values still pass through `scrub` as defence in depth."""
+    logger.log(level, event, exc_info=exc_info, extra={"event": event, "fields": fields})
+
+
+def _scrub_fields(fields: dict) -> dict:
+    return {k: (scrub(v) if isinstance(v, str) else v) for k, v in fields.items()}
+
+
+class PlainFormatter(logging.Formatter):
+    """Human-readable local format that still shows structured fields."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        text = super().format(record)
+        fields = getattr(record, "fields", None)
+        if fields:
+            text += " | " + " ".join(f"{k}={v}" for k, v in _scrub_fields(fields).items())
+        return text
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
@@ -94,6 +117,13 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", "-"),
         }
+        event = getattr(record, "event", None)
+        if event:
+            payload["event"] = event
+        fields = getattr(record, "fields", None)
+        if fields:
+            for key, value in _scrub_fields(fields).items():
+                payload.setdefault(key, value)  # never let a field overwrite a core key
         if record.exc_text:
             payload["exception"] = record.exc_text
         elif record.exc_info:
@@ -109,6 +139,9 @@ def configure_logging(settings: Settings) -> None:
             [
                 settings.abdm_client_secret.get_secret_value(),
                 settings.abdm_client_id,
+                settings.smtp_password.get_secret_value(),
+                settings.metrics_token.get_secret_value(),
+                settings.alert_webhook_url.get_secret_value(),
                 settings.jwt_access_secret_key,
                 settings.jwt_refresh_secret_key,
                 settings.qr_signing_secret_key,
@@ -121,7 +154,7 @@ def configure_logging(settings: Settings) -> None:
         handler.setFormatter(JsonFormatter())
     else:
         handler.setFormatter(
-            logging.Formatter(
+            PlainFormatter(
                 "%(asctime)s | %(levelname)-8s | %(name)s | request_id=%(request_id)s | %(message)s"
             )
         )

@@ -20,7 +20,7 @@ mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR" 2>/dev/null || true
 mkdir "$DEST"
 chmod 700 "$DEST" 2>/dev/null || true
-trap 'rc=$?; if [[ $rc -ne 0 ]]; then log "backup FAILED - removing partial $DEST"; rm -rf "$DEST"; fi' EXIT
+trap 'rc=$?; if [[ $rc -ne 0 ]]; then log "backup FAILED - removing partial $DEST"; rm -rf "$DEST"; record_failure backup "$rc"; fi' EXIT
 
 log "database $PG_DB in $PG_CONTAINER -> $DEST"
 
@@ -76,5 +76,6 @@ if [[ "$RETENTION_DAYS" -gt 0 ]]; then
 fi
 
 trap - EXIT
+record_success success
 log "backup complete: $DEST ($(du -sh "$DEST" | cut -f1), revision $REVISION, $FILE_COUNT files)"
 echo "$DEST"

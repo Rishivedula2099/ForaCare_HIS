@@ -119,6 +119,11 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
     iconName: "Printer",
   },
   {
+    title: "Hospital Setup",
+    href: "/setup",
+    iconName: "Building2",
+  },
+  {
     title: "Audit & Logs",
     href: "/audit",
     iconName: "ShieldCheck",

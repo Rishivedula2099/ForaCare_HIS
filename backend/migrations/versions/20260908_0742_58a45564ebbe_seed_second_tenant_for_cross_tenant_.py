@@ -32,6 +32,13 @@ USER_ID = "44444444-4444-4444-4444-444444444403"
 
 
 def upgrade() -> None:
+    # P10-B01: demo fixtures (shared "Demo@123" logins, sample patients, ...)
+    # are created only when SEED_DEMO_DATA=true in a local/dev environment.
+    from app.core.demo_seed import demo_seed_enabled
+
+    if not demo_seed_enabled():
+        return
+
     connection = op.get_bind()
 
     connection.execute(

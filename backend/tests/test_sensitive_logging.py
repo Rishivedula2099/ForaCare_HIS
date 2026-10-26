@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.engine import make_url
 
 from app.core.config import Settings, get_settings
+from tests.prod_settings import prod_kwargs
 from app.core.logging import REDACTED, SecretRedactionFilter, scrub
 
 APP = Path(__file__).resolve().parents[1] / "app"
@@ -108,14 +109,7 @@ def test_settings_repr_hides_credentials():
 
 def test_db_echo_is_rejected_outside_local():
     with pytest.raises(ValueError, match="DB_ECHO"):
-        Settings(
-            environment="production",
-            debug=False,
-            db_echo=True,
-            jwt_access_secret_key="a" * 40,
-            jwt_refresh_secret_key="b" * 40,
-            qr_signing_secret_key="c" * 40,
-        )
+        Settings(**prod_kwargs(db_echo=True))
 
 
 def test_database_password_is_parsed_for_redaction():
@@ -219,6 +213,7 @@ def test_no_print_statements_in_application_code():
     offenders = [
         f"{p.relative_to(APP)}:{n}"
         for p in APP.rglob("*.py")
+        if p.name != "cli.py"  # the operator CLI's output *is* its interface
         for n, line in enumerate(p.read_text(encoding="utf8").splitlines(), 1)
         if re.match(r"\s*print\(", line)
     ]
